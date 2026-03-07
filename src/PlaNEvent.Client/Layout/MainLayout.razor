@@ -2,19 +2,146 @@
 @inject AuthService AuthService
 @inject NavigationManager NavigationManager
 
+<style>
+.page {
+    display: flex;
+    min-height: 100vh;
+    background: #f5f8fc;
+}
+
+.sidebar {
+    width: 264px;
+    background: linear-gradient(180deg, #10192a 0%, #0f1f3e 100%);
+    box-shadow: 2px 0 18px rgba(10, 21, 40, 0.18);
+}
+
+main {
+    flex: 1;
+}
+
+.workspace-topbar {
+    height: 62px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f7fbff;
+    border-bottom: 1px solid #dfe8f4;
+}
+
+.topbar-left {
+    display: flex;
+    gap: 1rem;
+    color: #4f6f93;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.city-select {
+    width: 170px;
+}
+
+.brand-block {
+    height: 72px;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0 0.9rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.brand-logo { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; background: #fff; }
+
+.brand-text {
+    color: #d8e3f8;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.nav-scrollable {
+    padding: 0.75rem;
+}
+
+.side-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.side-link {
+    display: block;
+    width: 100%;
+    border: 0;
+    border-radius: 8px;
+    text-align: left;
+    padding: 0.58rem 0.7rem;
+    color: #a8b8d6;
+    text-decoration: none;
+    background: transparent;
+    font-size: 0.95rem;
+}
+
+.side-link:hover,
+.side-link.active {
+    color: #fff;
+    background: #203451;
+}
+
+.side-btn {
+    cursor: pointer;
+}
+
+@@media (max-width: 960px) {
+    .sidebar {
+        width: 100%;
+    }
+
+    .page {
+        flex-direction: column;
+    }
+
+    .workspace-topbar {
+        height: auto;
+        padding-top: 0.5rem;
+        padding-bottom: 0.5rem;
+        gap: 0.5rem;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+</style>
+
 <div class="page">
     <div class="sidebar">
         <NavMenu />
     </div>
 
     <main>
-        <div class="layout-header px-4 py-2">
-            <AuthorizeView>
-                <Authorized>
-                    <button class="btn btn-sm btn-outline-secondary" @onclick="SignOut">Sign Out</button>
-                </Authorized>
-            </AuthorizeView>
-        </div>
+        <header class="workspace-topbar px-4">
+            <div class="topbar-left">
+                <span>@DateTime.Now.ToString("MMMM dd, yyyy")</span>
+                <span>@DateTime.Now.ToString("hh:mm:ss tt")</span>
+                <span>@($"(UTC{DateTimeOffset.Now:zzz})")</span>
+            </div>
+            <div class="topbar-right">
+                <select class="form-select form-select-sm city-select" @bind="city">
+                    <option>New York City</option>
+                    <option>Chennai City</option>
+                    <option>London City</option>
+                </select>
+                <AuthorizeView>
+                    <Authorized>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="SignOut">Sign Out</button>
+                    </Authorized>
+                </AuthorizeView>
+            </div>
+        </header>
+
         <article class="content px-4">
             @Body
         </article>
@@ -22,9 +149,12 @@
 </div>
 
 @code {
+    private string city = "New York City";
+
     private async Task SignOut()
     {
         await AuthService.LogoutAsync();
         NavigationManager.NavigateTo("/auth/login", true);
     }
 }
+

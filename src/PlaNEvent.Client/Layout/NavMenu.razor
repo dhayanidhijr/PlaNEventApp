@@ -1,35 +1,33 @@
-@inject NavigationManager NavigationManager
+﻿@inject NavigationManager NavigationManager
 
-<div class="top-row ps-3 navbar navbar-dark">
-    <span class="navbar-brand">PlaNEvent</span>
-    <button class="navbar-toggler" title="Toggle navigation" @onclick="ToggleNavMenu">
-        <span class="navbar-toggler-icon"></span>
-    </button>
+<div class="brand-block" title="PlaNEvent">
+    <img class="brand-logo" src="images/planevent-logo.png" alt="PlaNEvent" />
+    <div class="brand-text">PlaNEvent</div>
 </div>
 
-<div class="nav-scrollable @(collapseNavMenu ? "collapse" : null)">
+<div class="nav-scrollable">
     <AuthorizeView>
         <Authorized Context="authState">
-            <nav class="nav flex-column">
-                <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Home</NavLink>
-                <NavLink class="nav-link" href="calendar">Calendar</NavLink>
-                <NavLink class="nav-link" href="occurrences">Occurrence</NavLink>
-                <NavLink class="nav-link" href="groups">Group Management</NavLink>
-                <NavLink class="nav-link" href="staff">Staff</NavLink>
-                <NavLink class="nav-link" href="customers">Customers</NavLink>
-                <NavLink class="nav-link" href="bookings">Booking Management</NavLink>
-                <NavLink class="nav-link" href="profile">Account</NavLink>
+            <nav class="side-nav">
+                <NavLink class="side-link" href="" Match="NavLinkMatch.All">Home</NavLink>
+                <NavLink class="side-link" href="calendar">Calendar</NavLink>
+                <NavLink class="side-link" href="occurrences">Occurrence</NavLink>
+                <NavLink class="side-link" href="groups">Group Management</NavLink>
+                <NavLink class="side-link" href="staff">Staff</NavLink>
+                <NavLink class="side-link" href="customers">Customers</NavLink>
+                <NavLink class="side-link" href="bookings">Booking Management</NavLink>
+                <NavLink class="side-link" href="profile">Account</NavLink>
                 @if (authState.User.IsInRole("Admin"))
                 {
-                    <NavLink class="nav-link" href="admin/users">Admin Panel</NavLink>
+                    <NavLink class="side-link" href="admin/users">Admin Panel</NavLink>
                 }
-                <button class="btn btn-link nav-link text-start" @onclick="Logout">Logout</button>
+                <button class="side-link side-btn" @onclick="Logout">Logout</button>
             </nav>
         </Authorized>
         <NotAuthorized>
-            <nav class="nav flex-column">
-                <NavLink class="nav-link" href="auth/login">Login</NavLink>
-                <NavLink class="nav-link" href="auth/register">Register</NavLink>
+            <nav class="side-nav">
+                <NavLink class="side-link" href="auth/login">Login</NavLink>
+                <NavLink class="side-link" href="auth/register">Register</NavLink>
             </nav>
         </NotAuthorized>
     </AuthorizeView>
@@ -38,16 +36,9 @@
 @code {
     [Inject] private AuthService AuthService { get; set; } = default!;
 
-    private bool collapseNavMenu;
-
-    private void ToggleNavMenu()
-    {
-        collapseNavMenu = !collapseNavMenu;
-    }
-
     private async Task Logout()
     {
         await AuthService.LogoutAsync();
-        NavigationManager.NavigateTo("auth/login", true);
+        NavigationManager.NavigateTo("/auth/login", true);
     }
 }

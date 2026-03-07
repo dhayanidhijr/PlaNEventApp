@@ -101,3 +101,71 @@ a, .btn-link {
 code {
     color: #c02d76;
 }
+
+.tree-row {
+    display: flex;
+    align-items: center;
+    gap: 0.32rem;
+    min-height: 30px;
+}
+
+.tree-row.selected {
+    background: #eef5ff;
+    border-radius: 4px;
+}
+
+.tree-toggle {
+    border: 0;
+    width: 18px;
+    height: 18px;
+    background: transparent;
+    color: #607da8;
+    line-height: 1;
+    padding: 0;
+}
+
+.tree-label-btn {
+    border: 0;
+    background: transparent;
+    color: #496a94;
+    padding: 0;
+    text-align: left;
+    font-size: 0.92rem;
+}
+
+.tree-menu-trigger {
+    margin-left: auto;
+    border: 0;
+    background: transparent;
+    color: #5f7ca6;
+    width: 24px;
+    height: 24px;
+}
+
+.tree-context {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #dce6f3;
+    border-radius: 6px;
+    background: #fff;
+    width: 180px;
+    margin-bottom: 0.4rem;
+    overflow: hidden;
+    box-shadow: 0 8px 20px rgba(18, 44, 78, 0.1);
+}
+
+.tree-context button {
+    border: 0;
+    background: #fff;
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+    color: #47658f;
+}
+
+.tree-context button:hover {
+    background: #f2f7ff;
+}
+
+.small-modal {
+    width: min(420px, 92vw);
+}

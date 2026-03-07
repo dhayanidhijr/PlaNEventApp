@@ -1,49 +1,215 @@
 @page "/calendar"
 @attribute [Authorize]
 @inject ApiClient ApiClient
+@inject IJSRuntime JS
 
-<h1>Calendar</h1>
-
-<div class="mb-3">
-    <label>View:</label>
-    <InputSelect class="form-select" @bind-Value="view">
-        <option value="day">Day</option>
-        <option value="week">Week</option>
-        <option value="month">Month</option>
-        <option value="list">List</option>
-    </InputSelect>
+<div class="module-header">
+    <div>
+        <h1 class="page-title">Calendar</h1>
+        <p class="subtitle">Calendar</p>
+    </div>
+    <button class="btn btn-primary" @onclick="OpenAddBookingModal">Add Booking</button>
 </div>
 
-@if (occurrences.Count == 0)
-{
-    <p>No occurrences available for this window.</p>
-}
-else
-{
-    <table class="table table-striped">
-        <thead>
-            <tr>
-                <th>Occurrence</th>
-                <th>Slots</th>
-                <th>Published</th>
-            </tr>
-        </thead>
-        <tbody>
-        @foreach (var occurrence in occurrences)
+<div class="calendar-shell">
+    <aside class="offerings-panel">
+        <h3>Categories & Offerings</h3>
+        <input class="form-control search-box" placeholder="Search" @bind="searchText" @bind:event="oninput" />
+
+        <div class="tree-list">
+            @foreach (var row in VisibleRows())
+            {
+                <div class="tree-row @(selectedNodeId == row.Id ? "selected" : string.Empty)" style="padding-left:@(8 + row.Level * 18)px">
+                    <button class="tree-toggle" @onclick="() => ToggleExpand(row.Id)">@ExpandGlyph(row.Id)</button>
+                    <input type="checkbox" checked />
+                    <span class="tree-dot" style="background:@row.Color"></span>
+                    <button class="tree-label-btn" @onclick="() => SelectNode(row.Id)">@row.Name</button>
+                    <button class="tree-menu-trigger" @onclick="() => ToggleContext(row.Id)">?</button>
+                </div>
+
+                @if (contextNodeId == row.Id)
+                {
+                    <div class="tree-context" style="margin-left:@(34 + row.Level * 18)px">
+                        <button @onclick="() => OpenRenameNode(row.Id)">Edit</button>
+                        <button @onclick='() => BeginCreateNode(row.Id, "subcategory")'>Add Subcategory</button>
+                        <button @onclick='() => BeginCreateNode(row.Id, "offering")'>Add Offering</button>
+                        <button @onclick="() => DeleteNode(row.Id)">Delete</button>
+                    </div>
+                }
+            }
+        </div>
+
+        <button class="btn btn-light panel-btn" @onclick='() => BeginCreateNode(null, "category")'>Add Category</button>
+        <button class="btn btn-primary panel-btn" @onclick='() => BeginCreateNode(selectedNodeId, "offering")'>+ New Offering</button>
+    </aside>
+
+    <section class="calendar-board">
+        <div class="calendar-toolbar">
+            <div class="left-tools">
+                <button class="btn btn-sm btn-light" @onclick="PrevRange">‹</button>
+                <button class="btn btn-sm btn-light" @onclick="Today">Today</button>
+                <button class="btn btn-sm btn-light" @onclick="NextRange">›</button>
+                <span class="range-label">@RangeLabel()</span>
+            </div>
+            <div class="view-switch">
+                <button class="view-link @(view == "list" ? "active" : string.Empty)" @onclick='() => SetView("list")'>List</button>
+                <button class="view-link @(view == "day" ? "active" : string.Empty)" @onclick='() => SetView("day")'>Day</button>
+                <button class="view-link @(view == "week" ? "active" : string.Empty)" @onclick='() => SetView("week")'>Week</button>
+                <button class="view-link @(view == "month" ? "active" : string.Empty)" @onclick='() => SetView("month")'>Month</button>
+                <button class="view-link @(view == "year" ? "active" : string.Empty)" @onclick='() => SetView("year")'>Year</button>
+            </div>
+        </div>
+
+        @if (view == "list")
         {
-            <tr>
-                <td>@occurrence.Title</td>
-                <td>@occurrence.Slots.Count</td>
-                <td>@occurrence.IsPublished</td>
-            </tr>
+            <div class="list-view">
+                @foreach (var item in FilteredOccurrences().OrderBy(x => x.Slots.FirstOrDefault()?.StartUtc))
+                {
+                    <div class="list-item">
+                        <div>
+                            <strong>@item.Title</strong>
+                            <div class="muted">@item.Description</div>
+                        </div>
+                        <div>@item.Slots.Count slot(s)</div>
+                    </div>
+                }
+            </div>
         }
-        </tbody>
-    </table>
+        else
+        {
+            <div class="week-head">
+                <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+            </div>
+            <div class="month-grid">
+                @foreach (var day in DaysInView())
+                {
+                    <div class="day-cell @(day.Date == DateTime.UtcNow.Date ? "today" : string.Empty)">
+                        <div class="day-num">@day.Day</div>
+                        @foreach (var evt in EventsForDay(day).Take(3))
+                        {
+                            <div class="event-chip @(evt.IsAlt ? "alt" : string.Empty)">@evt.Label</div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </section>
+</div>
+
+@if (showNodeModal)
+{
+    <div class="modal-backdrop">
+        <div class="booking-modal small-modal">
+            <h4>@NodeModalTitle()</h4>
+            <label>Name</label>
+            <InputText class="form-control" @bind-Value="nodeEditorName" />
+            <div class="modal-actions">
+                <button class="btn btn-light" @onclick="CloseNodeModal">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveNodeModal">Save</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showAddBooking)
+{
+    <div class="modal-backdrop">
+        <div class="booking-modal">
+            <h4>Add Booking</h4>
+            <div class="row g-2">
+                <div class="col-12">
+                    <label>Occurrence Name</label>
+                    <InputText class="form-control" @bind-Value="newOccurrence.Title" />
+                </div>
+                <div class="col-12">
+                    <label>Description</label>
+                    <InputText class="form-control" @bind-Value="newOccurrence.Description" />
+                </div>
+                <div class="col-6">
+                    <label>Start Date (UTC)</label>
+                    <InputDate class="form-control" @bind-Value="slotStartDate" />
+                </div>
+                <div class="col-6">
+                    <label>End Date (UTC)</label>
+                    <InputDate class="form-control" @bind-Value="slotEndDate" />
+                </div>
+                <div class="col-12">
+                    <label>Category/Subcategory</label>
+                    <select class="form-select" @bind="bookingNodeId">
+                        <option value="">(None)</option>
+                        @foreach (var row in VisibleRows())
+                        {
+                            <option value="@row.Id">@($"{new string(' ', row.Level * 2)}{row.Name}")</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 form-check mt-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="newOccurrence.PublishOnCreate" />
+                    <label class="form-check-label">Publish for sale</label>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-light" @onclick="CloseAddBookingModal">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveBooking">Save</button>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(status))
+            {
+                <p class="mt-2">@status</p>
+            }
+        </div>
+    </div>
 }
 
 @code {
+    private sealed record EventChip(string Label, bool IsAlt);
+
+    private sealed class CategoryNode
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string? ParentId { get; set; }
+        public string Kind { get; set; } = "category";
+        public string Name { get; set; } = string.Empty;
+        public string Color { get; set; } = "#2f80ff";
+        public bool Expanded { get; set; } = true;
+        public int? EventGroupId { get; set; }
+    }
+
+    private sealed class TreeRow
+    {
+        public string Id { get; set; } = string.Empty;
+        public int Level { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Color { get; set; } = "#2f80ff";
+    }
+
+    private const string TreeStorageKey = "planevent.calendar.tree.v1";
+    private const string AssignmentStorageKey = "planevent.calendar.assignments.v1";
+
     private string view = "month";
+    private DateTime pivotDate = DateTime.UtcNow.Date;
+    private string searchText = string.Empty;
+    private bool showAddBooking;
+    private string? status;
+
     private List<OccurrenceDto> occurrences = new();
+    private List<EventGroupDto> groups = new();
+    private List<CategoryNode> nodes = new();
+    private Dictionary<int, string> occurrenceAssignments = new();
+
+    private CreateOccurrenceRequest newOccurrence = new();
+    private DateTime slotStartDate = DateTime.UtcNow.Date;
+    private DateTime slotEndDate = DateTime.UtcNow.Date.AddDays(1);
+
+    private string? selectedNodeId;
+    private string? contextNodeId;
+    private string? bookingNodeId;
+
+    private bool showNodeModal;
+    private string nodeModalMode = "create";
+    private string nodeEditorKind = "category";
+    private string? nodeEditorTargetParentId;
+    private string? nodeEditorTargetId;
+    private string nodeEditorName = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
@@ -52,15 +218,450 @@ else
 
     private async Task LoadAsync()
     {
-        var now = DateTime.UtcNow;
-        var (start, end) = view switch
+        var start = pivotDate.AddDays(-35);
+        var end = pivotDate.AddDays(35);
+        occurrences = await ApiClient.OccurrencesAsync(start, end);
+        groups = await ApiClient.GroupsAsync();
+        await LoadTreeAsync();
+        await LoadAssignmentsAsync();
+    }
+
+    private async Task LoadTreeAsync()
+    {
+        var json = await JS.InvokeAsync<string>("planeventAuth.getToken", TreeStorageKey);
+        if (!string.IsNullOrWhiteSpace(json))
         {
-            "day" => (now.Date, now.Date.AddDays(1)),
-            "week" => (now.Date.AddDays(-7), now.Date.AddDays(7)),
-            "month" => (now.Date.AddDays(-31), now.Date.AddDays(31)),
-            _ => (DateTime.UtcNow.AddYears(-1), DateTime.UtcNow.AddYears(1))
+            var parsed = System.Text.Json.JsonSerializer.Deserialize<List<CategoryNode>>(json);
+            if (parsed is not null)
+            {
+                nodes = parsed;
+            }
+        }
+
+        if (nodes.Count == 0)
+        {
+            nodes = groups.Select(g => new CategoryNode
+            {
+                Id = $"group-{g.Id}",
+                ParentId = null,
+                Kind = "category",
+                Name = g.Name,
+                EventGroupId = g.Id,
+                Color = "#2f80ff",
+                Expanded = true
+            }).ToList();
+
+            await SaveTreeAsync();
+        }
+    }
+
+    private async Task LoadAssignmentsAsync()
+    {
+        var json = await JS.InvokeAsync<string>("planeventAuth.getToken", AssignmentStorageKey);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            occurrenceAssignments = new();
+            return;
+        }
+
+        var parsed = System.Text.Json.JsonSerializer.Deserialize<Dictionary<int, string>>(json);
+        occurrenceAssignments = parsed ?? new();
+    }
+
+    private async Task SaveTreeAsync()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(nodes);
+        await JS.InvokeVoidAsync("planeventAuth.setToken", TreeStorageKey, json);
+    }
+
+    private async Task SaveAssignmentsAsync()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(occurrenceAssignments);
+        await JS.InvokeVoidAsync("planeventAuth.setToken", AssignmentStorageKey, json);
+    }
+
+    private IEnumerable<TreeRow> VisibleRows()
+    {
+        var roots = nodes.Where(x => x.ParentId is null);
+        foreach (var root in roots)
+        {
+            foreach (var row in Traverse(root, 0))
+            {
+                if (string.IsNullOrWhiteSpace(searchText) || row.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+                {
+                    yield return row;
+                }
+            }
+        }
+    }
+
+    private IEnumerable<TreeRow> Traverse(CategoryNode node, int level)
+    {
+        yield return new TreeRow
+        {
+            Id = node.Id,
+            Level = level,
+            Name = node.Name,
+            Color = node.Color
         };
 
-        occurrences = await ApiClient.OccurrencesAsync(start, end);
+        if (!node.Expanded)
+        {
+            yield break;
+        }
+
+        foreach (var child in nodes.Where(x => x.ParentId == node.Id))
+        {
+            foreach (var row in Traverse(child, level + 1))
+            {
+                yield return row;
+            }
+        }
+    }
+
+    private IEnumerable<OccurrenceDto> FilteredOccurrences()
+        => occurrences.Where(OccurrenceMatchesSelectedNode);
+
+    private bool OccurrenceMatchesSelectedNode(OccurrenceDto occurrence)
+    {
+        if (string.IsNullOrWhiteSpace(selectedNodeId))
+        {
+            return true;
+        }
+
+        if (occurrenceAssignments.TryGetValue(occurrence.Id, out var mappedNodeId))
+        {
+            return mappedNodeId == selectedNodeId || IsDescendantOf(mappedNodeId, selectedNodeId);
+        }
+
+        var rootNode = nodes.FirstOrDefault(x => x.EventGroupId.HasValue && x.EventGroupId == occurrence.EventGroupId);
+        if (rootNode is null)
+        {
+            return false;
+        }
+
+        return rootNode.Id == selectedNodeId || IsDescendantOf(rootNode.Id, selectedNodeId);
+    }
+
+    private bool IsDescendantOf(string nodeId, string? expectedAncestorId)
+    {
+        if (string.IsNullOrWhiteSpace(expectedAncestorId))
+        {
+            return true;
+        }
+
+        var current = nodes.FirstOrDefault(x => x.Id == nodeId);
+        while (current is not null)
+        {
+            if (current.Id == expectedAncestorId)
+            {
+                return true;
+            }
+
+            current = current.ParentId is null ? null : nodes.FirstOrDefault(x => x.Id == current.ParentId);
+        }
+
+        return false;
+    }
+
+    private string ExpandGlyph(string id)
+    {
+        var hasChildren = nodes.Any(x => x.ParentId == id);
+        if (!hasChildren)
+        {
+            return "·";
+        }
+
+        var node = nodes.First(x => x.Id == id);
+        return node.Expanded ? "?" : "?";
+    }
+
+    private async Task ToggleExpand(string id)
+    {
+        var node = nodes.FirstOrDefault(x => x.Id == id);
+        if (node is null)
+        {
+            return;
+        }
+
+        node.Expanded = !node.Expanded;
+        await SaveTreeAsync();
+    }
+
+    private void SelectNode(string id)
+    {
+        selectedNodeId = id;
+        contextNodeId = null;
+    }
+
+    private void ToggleContext(string id)
+        => contextNodeId = contextNodeId == id ? null : id;
+
+    private void BeginCreateNode(string? parentId, string kind)
+    {
+        nodeModalMode = "create";
+        nodeEditorKind = kind;
+        nodeEditorTargetParentId = parentId;
+        nodeEditorTargetId = null;
+        nodeEditorName = string.Empty;
+        showNodeModal = true;
+        contextNodeId = null;
+    }
+
+    private void OpenRenameNode(string nodeId)
+    {
+        var node = nodes.FirstOrDefault(x => x.Id == nodeId);
+        if (node is null)
+        {
+            return;
+        }
+
+        nodeModalMode = "edit";
+        nodeEditorKind = node.Kind;
+        nodeEditorTargetParentId = node.ParentId;
+        nodeEditorTargetId = node.Id;
+        nodeEditorName = node.Name;
+        showNodeModal = true;
+        contextNodeId = null;
+    }
+
+    private async Task DeleteNode(string nodeId)
+    {
+        var toDelete = new HashSet<string>();
+        Collect(nodeId, toDelete);
+
+        nodes = nodes.Where(x => !toDelete.Contains(x.Id)).ToList();
+
+        foreach (var key in occurrenceAssignments.Where(x => toDelete.Contains(x.Value)).Select(x => x.Key).ToList())
+        {
+            occurrenceAssignments.Remove(key);
+        }
+
+        if (selectedNodeId is not null && toDelete.Contains(selectedNodeId))
+        {
+            selectedNodeId = null;
+        }
+
+        contextNodeId = null;
+        await SaveTreeAsync();
+        await SaveAssignmentsAsync();
+
+        void Collect(string id, HashSet<string> bag)
+        {
+            bag.Add(id);
+            foreach (var child in nodes.Where(x => x.ParentId == id).ToList())
+            {
+                Collect(child.Id, bag);
+            }
+        }
+    }
+
+    private void CloseNodeModal() => showNodeModal = false;
+
+    private string NodeModalTitle()
+        => nodeModalMode == "edit"
+            ? "Edit Node"
+            : nodeEditorKind switch
+            {
+                "category" => "Add Category",
+                "subcategory" => "Add Subcategory",
+                _ => "Add Offering"
+            };
+
+    private async Task SaveNodeModal()
+    {
+        if (string.IsNullOrWhiteSpace(nodeEditorName))
+        {
+            return;
+        }
+
+        if (nodeModalMode == "edit" && nodeEditorTargetId is not null)
+        {
+            var existing = nodes.FirstOrDefault(x => x.Id == nodeEditorTargetId);
+            if (existing is not null)
+            {
+                existing.Name = nodeEditorName.Trim();
+                await SaveTreeAsync();
+            }
+
+            showNodeModal = false;
+            return;
+        }
+
+        var newNode = new CategoryNode
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            ParentId = nodeEditorKind == "category" ? null : nodeEditorTargetParentId,
+            Kind = nodeEditorKind,
+            Name = nodeEditorName.Trim(),
+            Color = nodeEditorKind switch
+            {
+                "category" => "#2f80ff",
+                "subcategory" => "#36c262",
+                _ => "#ec3e47"
+            },
+            Expanded = true
+        };
+
+        nodes.Add(newNode);
+
+        if (nodeEditorKind == "category")
+        {
+            _ = await ApiClient.CreateGroupAsync(new EventGroupDto { Name = newNode.Name, Description = "Created from calendar" });
+        }
+
+        await SaveTreeAsync();
+        showNodeModal = false;
+    }
+
+    private IEnumerable<DateTime> DaysInView()
+    {
+        if (view == "day")
+        {
+            return new[] { pivotDate };
+        }
+
+        if (view == "week")
+        {
+            return Enumerable.Range(0, 7).Select(i => pivotDate.Date.AddDays(i));
+        }
+
+        if (view == "year")
+        {
+            return Enumerable.Range(0, 42).Select(i => new DateTime(pivotDate.Year, 1, 1).AddDays(i));
+        }
+
+        var first = new DateTime(pivotDate.Year, pivotDate.Month, 1);
+        var offset = (int)first.DayOfWeek;
+        var start = first.AddDays(-offset);
+        return Enumerable.Range(0, 42).Select(i => start.AddDays(i));
+    }
+
+    private IEnumerable<EventChip> EventsForDay(DateTime day)
+    {
+        var real = FilteredOccurrences()
+            .Where(o => o.Slots.Any(s => s.StartUtc.Date == day.Date))
+            .Select((o, index) => new EventChip(o.Title, index % 2 == 1))
+            .ToList();
+
+        return real;
+    }
+
+    private void SetView(string nextView) => view = nextView;
+
+    private async Task PrevRange()
+    {
+        pivotDate = view switch
+        {
+            "day" => pivotDate.AddDays(-1),
+            "week" => pivotDate.AddDays(-7),
+            "year" => pivotDate.AddYears(-1),
+            _ => pivotDate.AddMonths(-1)
+        };
+
+        await LoadAsync();
+    }
+
+    private async Task NextRange()
+    {
+        pivotDate = view switch
+        {
+            "day" => pivotDate.AddDays(1),
+            "week" => pivotDate.AddDays(7),
+            "year" => pivotDate.AddYears(1),
+            _ => pivotDate.AddMonths(1)
+        };
+
+        await LoadAsync();
+    }
+
+    private async Task Today()
+    {
+        pivotDate = DateTime.UtcNow.Date;
+        await LoadAsync();
+    }
+
+    private string RangeLabel()
+        => view switch
+        {
+            "day" => pivotDate.ToString("MMMM dd, yyyy"),
+            "week" => $"{pivotDate:MMM dd} - {pivotDate.AddDays(6):MMM dd, yyyy}",
+            "year" => pivotDate.Year.ToString(),
+            _ => pivotDate.ToString("MMMM yyyy")
+        };
+
+    private void OpenAddBookingModal()
+    {
+        showAddBooking = true;
+        status = null;
+        bookingNodeId = selectedNodeId;
+        newOccurrence = new CreateOccurrenceRequest
+        {
+            Slots = new List<SlotInputDto>()
+        };
+        slotStartDate = DateTime.UtcNow.Date;
+        slotEndDate = DateTime.UtcNow.Date.AddDays(1);
+    }
+
+    private void CloseAddBookingModal() => showAddBooking = false;
+
+    private async Task SaveBooking()
+    {
+        newOccurrence.Slots = new List<SlotInputDto>
+        {
+            new()
+            {
+                StartUtc = DateTime.SpecifyKind(slotStartDate, DateTimeKind.Utc),
+                EndUtc = DateTime.SpecifyKind(slotEndDate, DateTimeKind.Utc)
+            }
+        };
+
+        if (string.IsNullOrWhiteSpace(newOccurrence.Title))
+        {
+            status = "Occurrence name is required.";
+            return;
+        }
+
+        var assignNodeId = string.IsNullOrWhiteSpace(bookingNodeId) ? selectedNodeId : bookingNodeId;
+        if (!string.IsNullOrWhiteSpace(assignNodeId))
+        {
+            var node = nodes.FirstOrDefault(x => x.Id == assignNodeId);
+            if (node?.EventGroupId is int groupId)
+            {
+                newOccurrence.EventGroupId = groupId;
+            }
+            else
+            {
+                var ancestor = node;
+                while (ancestor is not null && ancestor.EventGroupId is null)
+                {
+                    ancestor = ancestor.ParentId is null ? null : nodes.FirstOrDefault(x => x.Id == ancestor.ParentId);
+                }
+
+                newOccurrence.EventGroupId = ancestor?.EventGroupId;
+            }
+        }
+
+        var created = await ApiClient.CreateOccurrenceDetailedAsync(newOccurrence);
+        if (created is null)
+        {
+            status = "Failed to create booking.";
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(assignNodeId))
+        {
+            occurrenceAssignments[created.Id] = assignNodeId;
+            await SaveAssignmentsAsync();
+        }
+
+        status = "Booking created.";
+        await LoadAsync();
+        showAddBooking = false;
+    }
+
+    private void OpenCreateGroup()
+    {
+        BeginCreateNode(null, "category");
     }
 }

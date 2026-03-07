@@ -23,14 +23,17 @@
     </div>
 
     <h5>Slots</h5>
-    @for (var i = 0; i < model.Slots.Count; i++)
+    @foreach (var slot in model.Slots)
     {
         <div class="row g-2 mb-2">
             <div class="col-md-5">
-                <InputDate class="form-control" @bind-Value="model.Slots[i].StartUtc" />
+                <InputDate class="form-control" @bind-Value="slot.StartUtc" />
             </div>
             <div class="col-md-5">
-                <InputDate class="form-control" @bind-Value="model.Slots[i].EndUtc" />
+                <InputDate class="form-control" @bind-Value="slot.EndUtc" />
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-outline-danger w-100" type="button" @onclick="() => RemoveSlot(slot)">Remove</button>
             </div>
         </div>
     }
@@ -98,6 +101,16 @@
             StartUtc = DateTime.UtcNow.Date,
             EndUtc = DateTime.UtcNow.Date.AddHours(1)
         });
+    }
+
+    private void RemoveSlot(SlotInputDto slot)
+    {
+        if (model.Slots.Count <= 1)
+        {
+            return;
+        }
+
+        model.Slots.Remove(slot);
     }
 
     private async Task CreateOccurrence()
