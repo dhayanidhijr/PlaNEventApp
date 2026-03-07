@@ -52,16 +52,27 @@
     margin-bottom: 0.95rem;
 }
 
-.tree-item {
+.tree-row {
     display: flex;
     align-items: center;
-    gap: 0.45rem;
-    padding: 0.28rem 0.15rem;
+    gap: 0.32rem;
+    min-height: 30px;
 }
 
-.tree-item.level-1 { padding-left: 1.15rem; }
-.tree-item.level-2 { padding-left: 2rem; }
-.tree-item.level-3 { padding-left: 2.75rem; }
+.tree-row.selected {
+    background: #eef5ff;
+    border-radius: 4px;
+}
+
+.tree-toggle {
+    border: 0;
+    width: 18px;
+    height: 18px;
+    background: transparent;
+    color: #607da8;
+    line-height: 1;
+    padding: 0;
+}
 
 .tree-dot {
     width: 9px;
@@ -69,9 +80,46 @@
     border-radius: 99px;
 }
 
-.tree-label {
+.tree-label-btn {
+    border: 0;
+    background: transparent;
     color: #496a94;
+    padding: 0;
+    text-align: left;
     font-size: 0.92rem;
+}
+
+.tree-menu-trigger {
+    margin-left: auto;
+    border: 0;
+    background: transparent;
+    color: #5f7ca6;
+    width: 24px;
+    height: 24px;
+}
+
+.tree-context {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #dce6f3;
+    border-radius: 6px;
+    background: #fff;
+    width: 180px;
+    margin-bottom: 0.4rem;
+    overflow: hidden;
+    box-shadow: 0 8px 20px rgba(18, 44, 78, 0.1);
+}
+
+.tree-context button {
+    border: 0;
+    background: #fff;
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+    color: #47658f;
+}
+
+.tree-context button:hover {
+    background: #f2f7ff;
 }
 
 .panel-btn {
@@ -206,6 +254,10 @@
     border-radius: 8px;
     padding: 1rem;
     border: 1px solid #dce6f3;
+}
+
+.small-modal {
+    width: min(420px, 92vw);
 }
 
 .modal-actions {
