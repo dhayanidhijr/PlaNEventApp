@@ -24,11 +24,7 @@ builder.Services
         options.Password.RequireUppercase = false;
         options.Password.RequireNonAlphanumeric = false;
         options.User.RequireUniqueEmail = true;
-
-
     })
-
-
     .AddRoles<IdentityRole>()
     .AddSignInManager<SignInManager<ApplicationUser>>()
     .AddEntityFrameworkStores<AppDbContext>();
@@ -47,7 +43,6 @@ builder.Services
             ValidAudience = jwt.Audience,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.Key))
         };
-
     });
 
 builder.Services.AddAuthorization();
@@ -57,7 +52,8 @@ builder.Services.AddScoped<IActivityService, ActivityService>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Client", policy =>
-        policy.WithOrigins(builder.Configuration["ClientUrl"] ?? "https://localhost:7209")
+        policy.AllowAnyOrigin()
+        //  policy.WithOrigins(builder.Configuration["ClientUrl"] ?? "https://localhost:7209")
             .AllowAnyMethod()
             .AllowAnyHeader());
 });
