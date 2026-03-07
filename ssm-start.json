@@ -1,0 +1,15 @@
+{
+    "Parameters":  {
+                       "commands":  [
+                                        "set -eu",
+                                        "cd /home/ubuntu/DaWinCalendarService",
+                                        "docker compose down || true",
+                                        "docker compose up -d --build",
+                                        "docker ps -a --format \"table {{.Names}}\\t{{.Status}}\\t{{.Ports}}\""
+                                    ]
+                   },
+    "DocumentName":  "AWS-RunShellScript",
+    "InstanceIds":  [
+                        "i-0ed64844ca3275b53"
+                    ]
+}

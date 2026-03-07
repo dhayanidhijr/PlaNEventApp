@@ -28,6 +28,33 @@ data "aws_ssm_parameter" "ubuntu_arm64_ami" {
   name = "/aws/service/canonical/ubuntu/server/22.04/stable/current/arm64/hvm/ebs-gp2/ami-id"
 }
 
+resource "aws_iam_role" "planevent_ec2_role" {
+  name = "${var.project_name}-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ssm_core" {
+  role       = aws_iam_role.planevent_ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "planevent" {
+  name = "${var.project_name}-instance-profile"
+  role = aws_iam_role.planevent_ec2_role.name
+}
+
 resource "aws_security_group" "planevent" {
   name        = "${var.project_name}-sg"
   description = "Security group for PlaNEvent EC2"
@@ -87,6 +114,7 @@ resource "aws_instance" "planevent" {
   vpc_security_group_ids      = [aws_security_group.planevent.id]
   key_name                    = var.key_name
   associate_public_ip_address = true
+  iam_instance_profile        = aws_iam_instance_profile.planevent.name
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
     repo_url   = var.repository_url

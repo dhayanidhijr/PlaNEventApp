@@ -8,9 +8,9 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "http://localhost:5000";
-
-//  var apiBaseUrl = "https://localhost:7153";
+var hostBase = new Uri(builder.HostEnvironment.BaseAddress);
+var inferredApiBaseUrl = $"{hostBase.Scheme}://{hostBase.Host}:5000/";
+var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? inferredApiBaseUrl;
 
 builder.Services.AddAuthorizationCore();
 builder.Services.AddScoped<TokenAuthenticationStateProvider>();

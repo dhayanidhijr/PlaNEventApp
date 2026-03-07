@@ -9,3 +9,5 @@ obj/
 terraform.tfstate
 terraform.tfstate.*
 .terraform/
+
+tools/
