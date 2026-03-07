@@ -1,0 +1,12 @@
+{
+    "Parameters":  {
+                       "commands":  [
+                                        "set -eu",
+                                        "docker exec planevent-proxy sh -c \"apk add --no-cache curl \u003e/dev/null 2\u003e\u00261; curl -I http://backendservice:8080/api/auth/login; curl -I http://backendservice:8080/swagger || true; curl -I http://backendservice:8080/swagger/index.html || true\""
+                                    ]
+                   },
+    "DocumentName":  "AWS-RunShellScript",
+    "InstanceIds":  [
+                        "i-0ed64844ca3275b53"
+                    ]
+}

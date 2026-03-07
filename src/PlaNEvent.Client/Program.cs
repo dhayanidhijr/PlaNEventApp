@@ -8,9 +8,8 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-var hostBase = new Uri(builder.HostEnvironment.BaseAddress);
-var inferredApiBaseUrl = $"{hostBase.Scheme}://{hostBase.Host}:5000/";
-var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? inferredApiBaseUrl;
+// Always call API through same origin (reverse proxy), avoiding localhost/cross-origin issues.
+var apiBaseUrl = builder.HostEnvironment.BaseAddress;
 
 builder.Services.AddAuthorizationCore();
 builder.Services.AddScoped<TokenAuthenticationStateProvider>();

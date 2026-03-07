@@ -1,0 +1,17 @@
+{
+    "Parameters":  {
+                       "commands":  [
+                                        "set -eu",
+                                        "CERT_DIR=$(docker volume inspect dawincalendarservice_nginx-certs --format \u0027{{ .Mountpoint }}\u0027)",
+                                        "rm -f \"$CERT_DIR/planevent.crt\" \"$CERT_DIR/planevent.key\"",
+                                        "openssl req -x509 -nodes -newkey rsa:2048 -days 3650 -keyout \"$CERT_DIR/planevent.key\" -out \"$CERT_DIR/planevent.crt\" -subj \"/CN=98.93.47.252\" -addext \"subjectAltName=IP:98.93.47.252,DNS:98.93.47.252\"",
+                                        "docker restart planevent-proxy",
+                                        "sleep 2",
+                                        "docker logs --tail 40 planevent-proxy || true"
+                                    ]
+                   },
+    "DocumentName":  "AWS-RunShellScript",
+    "InstanceIds":  [
+                        "i-0ed64844ca3275b53"
+                    ]
+}

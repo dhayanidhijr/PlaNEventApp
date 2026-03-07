@@ -1,0 +1,21 @@
+{
+    "Parameters":  {
+                       "commands":  [
+                                        "set -eu",
+                                        "cd /home/ubuntu/DaWinCalendarService",
+                                        "mkdir -p infra/nginx",
+                                        "cat \u003e infra/nginx/default.conf \u003c\u003c\u0027EOF\u0027\nserver {\n    listen 80;\n    server_name _;\n    return 301 https://$host$request_uri;\n}\n\nserver {\n    listen 443 ssl;\n    server_name _;\n\n    ssl_certificate     /etc/nginx/certs/planevent.crt;\n    ssl_certificate_key /etc/nginx/certs/planevent.key;\n    ssl_protocols       TLSv1.2 TLSv1.3;\n    ssl_session_timeout 1d;\n\n    location /api/ {\n        proxy_pass http://backendservice:8080;\n        proxy_http_version 1.1;\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto https;\n    }\n\n    location /swagger {\n        proxy_pass http://backendservice:8080;\n        proxy_http_version 1.1;\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto https;\n    }\n\n    location / {\n        proxy_pass http://clientapp:80;\n        proxy_http_version 1.1;\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto https;\n    }\n}\nEOF",
+                                        "cat \u003e src/PlaNEvent.Client/wwwroot/appsettings.json \u003c\u003c\u0027EOF\u0027\n{\n  \"ApiBaseUrl\": \"/\"\n}\nEOF",
+                                        "cat \u003e docker-compose.yml \u003c\u003c\u0027EOF\u0027\nservices:\n  db:\n    image: postgres:16-alpine\n    container_name: planevent-db\n    environment:\n      POSTGRES_DB: planevent\n      POSTGRES_USER: planevent\n      POSTGRES_PASSWORD: planevent\n    ports:\n      - \"5432:5432\"\n    volumes:\n      - postgres-data:/var/lib/postgresql/data\n    healthcheck:\n      test: [\"CMD-SHELL\", \"pg_isready -U planevent -d planevent\"]\n      interval: 10s\n      timeout: 5s\n      retries: 5\n\n  backendservice:\n    build:\n      context: .\n      dockerfile: src/PlaNEvent.Api/Dockerfile\n    container_name: planevent-backend\n    depends_on:\n      db:\n        condition: service_healthy\n    environment:\n      ASPNETCORE_ENVIRONMENT: Development\n      ASPNETCORE_URLS: http://+:8080\n      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=planevent;Username=planevent;Password=planevent\n      ClientUrl: https://localhost\n      BootstrapAdmin__Email: admin@planevent.local\n      BootstrapAdmin__Password: Admin123!\n\n  clientapp:\n    build:\n      context: .\n      dockerfile: src/PlaNEvent.Client/Dockerfile\n    container_name: planevent-client\n    depends_on:\n      - backendservice\n\n  reverseproxy:\n    image: nginx:1.27-alpine\n    container_name: planevent-proxy\n    depends_on:\n      - clientapp\n      - backendservice\n    ports:\n      - \"80:80\"\n      - \"443:443\"\n    volumes:\n      - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro\n      - nginx-certs:/etc/nginx/certs\n    command: \u003e\n      /bin/sh -c \"apk add --no-cache openssl \u003e/dev/null 2\u003e\u00261 \u0026\u0026\n      [ -f /etc/nginx/certs/planevent.crt ] ||\n      openssl req -x509 -nodes -newkey rsa:2048 -days 3650\n      -keyout /etc/nginx/certs/planevent.key\n      -out /etc/nginx/certs/planevent.crt\n      -subj \u0027/CN=PlaNEvent\u0027;\n      nginx -g \u0027daemon off;\u0027\"\n\nvolumes:\n  postgres-data:\n  nginx-certs:\nEOF",
+                                        "docker compose down || true",
+                                        "docker compose up -d --build",
+                                        "docker ps -a --format \"table {{.Names}}\\t{{.Status}}\\t{{.Ports}}\"",
+                                        "curl -k -I https://localhost",
+                                        "curl -I http://localhost"
+                                    ]
+                   },
+    "DocumentName":  "AWS-RunShellScript",
+    "InstanceIds":  [
+                        "i-0ed64844ca3275b53"
+                    ]
+}

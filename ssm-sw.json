@@ -1,0 +1,12 @@
+{
+    "Parameters":  {
+                       "commands":  [
+                                        "set -eu",
+                                        "docker exec planevent-backend sh -c \"printenv ASPNETCORE_ENVIRONMENT; curl -I http://localhost:8080/swagger || true; curl -I http://localhost:8080/swagger/index.html || true\""
+                                    ]
+                   },
+    "DocumentName":  "AWS-RunShellScript",
+    "InstanceIds":  [
+                        "i-0ed64844ca3275b53"
+                    ]
+}
