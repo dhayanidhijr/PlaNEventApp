@@ -1,0 +1,40 @@
+@page "/groups"
+@attribute [Authorize]
+@inject ApiClient ApiClient
+
+<h1>Group Management</h1>
+
+<EditForm Model="model" OnValidSubmit="Create">
+    <div class="mb-2">
+        <label>Name</label>
+        <InputText class="form-control" @bind-Value="model.Name" />
+    </div>
+    <div class="mb-2">
+        <label>Description</label>
+        <InputText class="form-control" @bind-Value="model.Description" />
+    </div>
+    <button class="btn btn-primary">Add Group</button>
+</EditForm>
+
+<ul class="mt-3">
+    @foreach (var group in groups)
+    {
+        <li>@group.Name - @group.Description</li>
+    }
+</ul>
+
+@code {
+    private EventGroupDto model = new();
+    private List<EventGroupDto> groups = new();
+
+    protected override async Task OnInitializedAsync() => groups = await ApiClient.GroupsAsync();
+
+    private async Task Create()
+    {
+        if (await ApiClient.CreateGroupAsync(model))
+        {
+            model = new EventGroupDto();
+            groups = await ApiClient.GroupsAsync();
+        }
+    }
+}

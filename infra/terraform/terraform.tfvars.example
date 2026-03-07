@@ -1,0 +1,7 @@
+aws_region      = "us-east-1"
+project_name    = "planevent"
+repository_url  = "https://github.com/your-org/DaWinCalendarService.git"
+repository_branch = "main"
+project_directory = "DaWinCalendarService"
+ssh_cidr        = "0.0.0.0/0"
+# key_name      = "your-keypair"

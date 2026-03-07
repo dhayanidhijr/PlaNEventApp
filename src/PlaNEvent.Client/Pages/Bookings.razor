@@ -1,0 +1,45 @@
+@page "/bookings"
+@attribute [Authorize]
+@inject ApiClient ApiClient
+
+<h1>Booking Management</h1>
+
+@if (bookings.Count == 0)
+{
+    <p>No bookings found.</p>
+}
+else
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Occurrence</th>
+                <th>Customer</th>
+                <th>Notes</th>
+                <th>Created (UTC)</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var booking in bookings)
+        {
+            <tr>
+                <td>@booking.Id</td>
+                <td>@booking.OccurrenceId</td>
+                <td>@booking.CustomerEmail</td>
+                <td>@booking.CustomerNotes</td>
+                <td>@booking.CreatedAtUtc</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<BookingDto> bookings = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        bookings = await ApiClient.BookingsAsync();
+    }
+}

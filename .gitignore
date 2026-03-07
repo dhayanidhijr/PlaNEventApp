@@ -1,0 +1,11 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.db
+*.sqlite
+*.log
+terraform.tfstate
+terraform.tfstate.*
+.terraform/

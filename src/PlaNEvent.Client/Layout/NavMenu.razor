@@ -1,0 +1,53 @@
+@inject NavigationManager NavigationManager
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <span class="navbar-brand">PlaNEvent</span>
+    <button class="navbar-toggler" title="Toggle navigation" @onclick="ToggleNavMenu">
+        <span class="navbar-toggler-icon"></span>
+    </button>
+</div>
+
+<div class="nav-scrollable @(collapseNavMenu ? "collapse" : null)">
+    <AuthorizeView>
+        <Authorized Context="authState">
+            <nav class="nav flex-column">
+                <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Home</NavLink>
+                <NavLink class="nav-link" href="calendar">Calendar</NavLink>
+                <NavLink class="nav-link" href="occurrences">Occurrence</NavLink>
+                <NavLink class="nav-link" href="groups">Group Management</NavLink>
+                <NavLink class="nav-link" href="staff">Staff</NavLink>
+                <NavLink class="nav-link" href="customers">Customers</NavLink>
+                <NavLink class="nav-link" href="bookings">Booking Management</NavLink>
+                <NavLink class="nav-link" href="profile">Account</NavLink>
+                @if (authState.User.IsInRole("Admin"))
+                {
+                    <NavLink class="nav-link" href="admin/users">Admin Panel</NavLink>
+                }
+                <button class="btn btn-link nav-link text-start" @onclick="Logout">Logout</button>
+            </nav>
+        </Authorized>
+        <NotAuthorized>
+            <nav class="nav flex-column">
+                <NavLink class="nav-link" href="auth/login">Login</NavLink>
+                <NavLink class="nav-link" href="auth/register">Register</NavLink>
+            </nav>
+        </NotAuthorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    [Inject] private AuthService AuthService { get; set; } = default!;
+
+    private bool collapseNavMenu;
+
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+
+    private async Task Logout()
+    {
+        await AuthService.LogoutAsync();
+        NavigationManager.NavigateTo("auth/login", true);
+    }
+}

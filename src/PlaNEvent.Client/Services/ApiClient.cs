@@ -1,0 +1,116 @@
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using PlaNEvent.Shared.Contracts;
+
+namespace PlaNEvent.Client.Services;
+
+public sealed class ApiClient(HttpClient httpClient, TokenAuthenticationStateProvider authStateProvider)
+{
+    public async Task<UserProfileDto?> MyProfileAsync()
+    {
+        await AttachTokenAsync();
+        return await httpClient.GetFromJsonAsync<UserProfileDto>("api/account/profile");
+    }
+
+    public async Task<List<OccurrenceDto>> OccurrencesAsync(DateTime? startUtc = null, DateTime? endUtc = null)
+    {
+        await AttachTokenAsync();
+        var query = "api/occurrences";
+        if (startUtc.HasValue && endUtc.HasValue)
+        {
+            query += $"?startUtc={Uri.EscapeDataString(startUtc.Value.ToString("O"))}&endUtc={Uri.EscapeDataString(endUtc.Value.ToString("O"))}";
+        }
+
+        return await httpClient.GetFromJsonAsync<List<OccurrenceDto>>(query) ?? new List<OccurrenceDto>();
+    }
+
+    public async Task<bool> CreateOccurrenceAsync(CreateOccurrenceRequest request)
+    {
+        await AttachTokenAsync();
+        var response = await httpClient.PostAsJsonAsync("api/occurrences", request);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<bool> PublishOccurrenceAsync(int id)
+    {
+        await AttachTokenAsync();
+        var response = await httpClient.PutAsync($"api/occurrences/{id}/publish", null);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<List<EventGroupDto>> GroupsAsync()
+    {
+        await AttachTokenAsync();
+        return await httpClient.GetFromJsonAsync<List<EventGroupDto>>("api/lookups/groups") ?? new List<EventGroupDto>();
+    }
+
+    public async Task<bool> CreateGroupAsync(EventGroupDto group)
+    {
+        await AttachTokenAsync();
+        var response = await httpClient.PostAsJsonAsync("api/lookups/groups", group);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<List<StaffDto>> StaffAsync()
+    {
+        await AttachTokenAsync();
+        return await httpClient.GetFromJsonAsync<List<StaffDto>>("api/lookups/staff") ?? new List<StaffDto>();
+    }
+
+    public async Task<bool> CreateStaffAsync(StaffDto staff)
+    {
+        await AttachTokenAsync();
+        var response = await httpClient.PostAsJsonAsync("api/lookups/staff", staff);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<List<UserProfileDto>> AdminUsersAsync()
+    {
+        await AttachTokenAsync();
+        return await httpClient.GetFromJsonAsync<List<UserProfileDto>>("api/admin/users") ?? new List<UserProfileDto>();
+    }
+
+    public async Task<(bool Success, string? Error)> AdminCreateUserAsync(AdminCreateUserRequest request)
+    {
+        await AttachTokenAsync();
+        var response = await httpClient.PostAsJsonAsync("api/admin/users", request);
+        if (response.IsSuccessStatusCode)
+        {
+            return (true, null);
+        }
+
+        var error = await response.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(error))
+        {
+            error = $"Request failed with status {(int)response.StatusCode}.";
+        }
+
+        return (false, error);
+    }
+
+    public async Task<bool> SetUserStatusAsync(string id, bool isDisabled)
+    {
+        await AttachTokenAsync();
+        var response = await httpClient.PutAsJsonAsync($"api/admin/users/{id}/status", new UpdateUserStatusRequest { IsDisabled = isDisabled });
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<List<OccurrenceDto>> PublicSalesAsync(string ownerSlug)
+    {
+        return await httpClient.GetFromJsonAsync<List<OccurrenceDto>>($"api/public/sales/{ownerSlug}") ?? new List<OccurrenceDto>();
+    }
+
+    public async Task<List<BookingDto>> BookingsAsync()
+    {
+        await AttachTokenAsync();
+        return await httpClient.GetFromJsonAsync<List<BookingDto>>("api/bookings") ?? new List<BookingDto>();
+    }
+
+    private async Task AttachTokenAsync()
+    {
+        var token = await authStateProvider.GetTokenAsync();
+        httpClient.DefaultRequestHeaders.Authorization = string.IsNullOrWhiteSpace(token)
+            ? null
+            : new AuthenticationHeaderValue("Bearer", token);
+    }
+}

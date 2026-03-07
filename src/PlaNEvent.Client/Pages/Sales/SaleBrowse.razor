@@ -1,0 +1,57 @@
+@page "/sale/{OwnerSlug}"
+@inject ApiClient ApiClient
+@inject BookingService BookingService
+
+<h1>Published Occurrences</h1>
+
+@if (occurrences.Count == 0)
+{
+    <p>No published occurrences found for this URL.</p>
+}
+else
+{
+    @foreach (var occurrence in occurrences)
+    {
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">@occurrence.Title</h5>
+                <p class="card-text">@occurrence.Description</p>
+                <p><strong>Group:</strong> @occurrence.EventGroupName | <strong>Staff:</strong> @occurrence.StaffName</p>
+                <ul>
+                    @foreach (var slot in occurrence.Slots)
+                    {
+                        <li>
+                            @slot.StartUtc.ToLocalTime() - @slot.EndUtc.ToLocalTime()
+                            <button class="btn btn-sm btn-primary ms-2" @onclick="() => Book(occurrence.Id, slot.Id)">Book</button>
+                        </li>
+                    }
+                </ul>
+            </div>
+        </div>
+    }
+}
+
+@if (!string.IsNullOrWhiteSpace(status))
+{
+    <p>@status</p>
+}
+
+@code {
+    [Parameter] public string OwnerSlug { get; set; } = string.Empty;
+
+    private List<OccurrenceDto> occurrences = new();
+    private string? status;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        occurrences = await ApiClient.PublicSalesAsync(OwnerSlug);
+    }
+
+    private async Task Book(int occurrenceId, int slotId)
+    {
+        var ok = await BookingService.BookAsync(occurrenceId, slotId, "Booked from public URL.");
+        status = ok
+            ? "Booking placed successfully."
+            : "Booking failed. Ensure you are logged in as customer/standard user.";
+    }
+}

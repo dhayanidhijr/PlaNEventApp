@@ -1,0 +1,47 @@
+@page "/auth/login"
+@inject AuthService AuthService
+@inject NavigationManager NavigationManager
+
+<h1>Login</h1>
+
+<EditForm Model="model" OnValidSubmit="HandleSubmit">
+    <DataAnnotationsValidator />
+    <div class="mb-3">
+        <label>Email</label>
+        <InputText class="form-control" @bind-Value="model.Email" />
+    </div>
+    <div class="mb-3">
+        <label>Password</label>
+        <InputText class="form-control" type="password" @bind-Value="model.Password" />
+    </div>
+    <button class="btn btn-primary" type="submit">Sign In</button>
+</EditForm>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <p class="text-danger mt-2">@error</p>
+}
+
+@code {
+    private LoginModel model = new();
+    private string? error;
+
+    private async Task HandleSubmit()
+    {
+        error = null;
+        var ok = await AuthService.LoginAsync(model.Email, model.Password);
+        if (!ok)
+        {
+            error = "Invalid credentials or disabled account.";
+            return;
+        }
+
+        NavigationManager.NavigateTo("/");
+    }
+
+    private sealed class LoginModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
+}

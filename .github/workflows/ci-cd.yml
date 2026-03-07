@@ -1,0 +1,53 @@
+name: ci-cd-planevent
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore PlaNEvent.sln
+
+      - name: Build
+        run: dotnet build PlaNEvent.sln --configuration Release --no-restore
+
+  deploy-ec2:
+    runs-on: ubuntu-latest
+    needs: build-and-validate
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy via SSM command
+        run: |
+          aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "PlaNEvent deployment" \
+            --parameters commands='[
+              "set -eux",
+              "cd /home/ubuntu/DaWinCalendarService",
+              "git fetch --all",
+              "git checkout main",
+              "git pull origin main",
+              "docker compose down || true",
+              "docker compose up -d --build"
+            ]' \
+            --output text

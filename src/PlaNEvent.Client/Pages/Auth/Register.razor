@@ -1,0 +1,57 @@
+@page "/auth/register"
+@inject AuthService AuthService
+@inject NavigationManager NavigationManager
+
+<h1>Register</h1>
+
+<EditForm Model="model" OnValidSubmit="HandleSubmit">
+    <DataAnnotationsValidator />
+    <div class="mb-3">
+        <label>Display Name</label>
+        <InputText class="form-control" @bind-Value="model.DisplayName" />
+    </div>
+    <div class="mb-3">
+        <label>Email</label>
+        <InputText class="form-control" @bind-Value="model.Email" />
+    </div>
+    <div class="mb-3">
+        <label>Password</label>
+        <InputText class="form-control" type="password" @bind-Value="model.Password" />
+    </div>
+    <div class="form-check mb-3">
+        <InputCheckbox class="form-check-input" @bind-Value="model.RegisterAsCustomer" />
+        <label class="form-check-label">Register as customer account</label>
+    </div>
+    <button class="btn btn-primary" type="submit">Create Account</button>
+</EditForm>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <p class="text-danger mt-2">@error</p>
+}
+
+@code {
+    private RegisterModel model = new();
+    private string? error;
+
+    private async Task HandleSubmit()
+    {
+        error = null;
+        var ok = await AuthService.RegisterAsync(model.Email, model.Password, model.DisplayName, model.RegisterAsCustomer);
+        if (!ok)
+        {
+            error = "Could not register with the provided information.";
+            return;
+        }
+
+        NavigationManager.NavigateTo("/");
+    }
+
+    private sealed class RegisterModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public bool RegisterAsCustomer { get; set; }
+    }
+}

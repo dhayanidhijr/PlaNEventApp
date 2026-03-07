@@ -1,0 +1,21 @@
+@page "/customers"
+@attribute [Authorize]
+@inject ApiClient ApiClient
+
+<h1>Customer Management</h1>
+
+<p>Share your dedicated published URL with customers so they can register/login and buy occurrences.</p>
+
+@if (profile is not null)
+{
+    <p><strong>Public Sales URL:</strong> <a href="@($"/sale/{profile.PublicSlug}")">@($"/sale/{profile.PublicSlug}")</a></p>
+}
+
+@code {
+    private UserProfileDto? profile;
+
+    protected override async Task OnInitializedAsync()
+    {
+        profile = await ApiClient.MyProfileAsync();
+    }
+}

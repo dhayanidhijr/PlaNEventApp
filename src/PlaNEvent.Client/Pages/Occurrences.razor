@@ -1,0 +1,114 @@
+@page "/occurrences"
+@attribute [Authorize]
+@inject ApiClient ApiClient
+
+<h1>Occurrence Management</h1>
+
+<EditForm Model="model" OnValidSubmit="CreateOccurrence">
+    <div class="mb-2">
+        <label>Title</label>
+        <InputText class="form-control" @bind-Value="model.Title" />
+    </div>
+    <div class="mb-2">
+        <label>Description</label>
+        <InputText class="form-control" @bind-Value="model.Description" />
+    </div>
+    <div class="mb-2">
+        <label>Repeat Until (optional UTC)</label>
+        <InputDate class="form-control" @bind-Value="model.RepeatUntilUtc" />
+    </div>
+    <div class="form-check mb-2">
+        <InputCheckbox class="form-check-input" @bind-Value="model.PublishOnCreate" />
+        <label class="form-check-label">Publish for Sale</label>
+    </div>
+
+    <h5>Slots</h5>
+    @for (var i = 0; i < model.Slots.Count; i++)
+    {
+        <div class="row g-2 mb-2">
+            <div class="col-md-5">
+                <InputDate class="form-control" @bind-Value="model.Slots[i].StartUtc" />
+            </div>
+            <div class="col-md-5">
+                <InputDate class="form-control" @bind-Value="model.Slots[i].EndUtc" />
+            </div>
+        </div>
+    }
+
+    <button class="btn btn-secondary me-2" type="button" @onclick="AddSlot">Add Slot</button>
+    <button class="btn btn-primary" type="submit">Create Occurrence</button>
+</EditForm>
+
+@if (!string.IsNullOrWhiteSpace(status))
+{
+    <p class="mt-2">@status</p>
+}
+
+<h2 class="mt-4">Existing Occurrences</h2>
+<table class="table">
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Published</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var occurrence in occurrences)
+    {
+        <tr>
+            <td>@occurrence.Title</td>
+            <td>@occurrence.IsPublished</td>
+            <td>
+                @if (!occurrence.IsPublished)
+                {
+                    <button class="btn btn-sm btn-outline-primary" @onclick="() => Publish(occurrence.Id)">Publish</button>
+                }
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+
+@code {
+    private CreateOccurrenceRequest model = new()
+    {
+        Slots = new List<SlotInputDto>
+        {
+            new()
+            {
+                StartUtc = DateTime.UtcNow.Date,
+                EndUtc = DateTime.UtcNow.Date.AddHours(1)
+            }
+        }
+    };
+
+    private List<OccurrenceDto> occurrences = new();
+    private string? status;
+
+    protected override async Task OnInitializedAsync()
+    {
+        occurrences = await ApiClient.OccurrencesAsync();
+    }
+
+    private void AddSlot()
+    {
+        model.Slots.Add(new SlotInputDto
+        {
+            StartUtc = DateTime.UtcNow.Date,
+            EndUtc = DateTime.UtcNow.Date.AddHours(1)
+        });
+    }
+
+    private async Task CreateOccurrence()
+    {
+        status = (await ApiClient.CreateOccurrenceAsync(model)) ? "Occurrence created." : "Failed to create occurrence.";
+        occurrences = await ApiClient.OccurrencesAsync();
+    }
+
+    private async Task Publish(int id)
+    {
+        status = (await ApiClient.PublishOccurrenceAsync(id)) ? "Occurrence published." : "Failed to publish.";
+        occurrences = await ApiClient.OccurrencesAsync();
+    }
+}

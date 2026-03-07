@@ -1,0 +1,66 @@
+@page "/calendar"
+@attribute [Authorize]
+@inject ApiClient ApiClient
+
+<h1>Calendar</h1>
+
+<div class="mb-3">
+    <label>View:</label>
+    <InputSelect class="form-select" @bind-Value="view">
+        <option value="day">Day</option>
+        <option value="week">Week</option>
+        <option value="month">Month</option>
+        <option value="list">List</option>
+    </InputSelect>
+</div>
+
+@if (occurrences.Count == 0)
+{
+    <p>No occurrences available for this window.</p>
+}
+else
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Occurrence</th>
+                <th>Slots</th>
+                <th>Published</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var occurrence in occurrences)
+        {
+            <tr>
+                <td>@occurrence.Title</td>
+                <td>@occurrence.Slots.Count</td>
+                <td>@occurrence.IsPublished</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@code {
+    private string view = "month";
+    private List<OccurrenceDto> occurrences = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var now = DateTime.UtcNow;
+        var (start, end) = view switch
+        {
+            "day" => (now.Date, now.Date.AddDays(1)),
+            "week" => (now.Date.AddDays(-7), now.Date.AddDays(7)),
+            "month" => (now.Date.AddDays(-31), now.Date.AddDays(31)),
+            _ => (DateTime.UtcNow.AddYears(-1), DateTime.UtcNow.AddYears(1))
+        };
+
+        occurrences = await ApiClient.OccurrencesAsync(start, end);
+    }
+}

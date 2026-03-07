@@ -1,0 +1,40 @@
+@page "/staff"
+@attribute [Authorize]
+@inject ApiClient ApiClient
+
+<h1>Staff Management</h1>
+
+<EditForm Model="model" OnValidSubmit="Create">
+    <div class="mb-2">
+        <label>Name</label>
+        <InputText class="form-control" @bind-Value="model.Name" />
+    </div>
+    <div class="mb-2">
+        <label>Email</label>
+        <InputText class="form-control" @bind-Value="model.Email" />
+    </div>
+    <button class="btn btn-primary">Add Staff</button>
+</EditForm>
+
+<ul class="mt-3">
+    @foreach (var person in staff)
+    {
+        <li>@person.Name (@person.Email)</li>
+    }
+</ul>
+
+@code {
+    private StaffDto model = new();
+    private List<StaffDto> staff = new();
+
+    protected override async Task OnInitializedAsync() => staff = await ApiClient.StaffAsync();
+
+    private async Task Create()
+    {
+        if (await ApiClient.CreateStaffAsync(model))
+        {
+            model = new StaffDto();
+            staff = await ApiClient.StaffAsync();
+        }
+    }
+}

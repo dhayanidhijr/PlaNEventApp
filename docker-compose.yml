@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: planevent-db
+    environment:
+      POSTGRES_DB: planevent
+      POSTGRES_USER: planevent
+      POSTGRES_PASSWORD: planevent
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U planevent -d planevent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backendservice:
+    build:
+      context: .
+      dockerfile: src/PlaNEvent.Api/Dockerfile
+    container_name: planevent-backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=planevent;Username=planevent;Password=planevent
+      ClientUrl: http://localhost:8080
+      BootstrapAdmin__Email: admin@planevent.local
+      BootstrapAdmin__Password: Admin123!
+    ports:
+      - "5000:8080"
+
+  clientapp:
+    build:
+      context: .
+      dockerfile: src/PlaNEvent.Client/Dockerfile
+    container_name: planevent-client
+    depends_on:
+      - backendservice
+    ports:
+      - "8080:80"
+
+volumes:
+  postgres-data:

@@ -1,0 +1,116 @@
+@page "/admin/users"
+@attribute [Authorize(Roles = "Admin")]
+@inject ApiClient ApiClient
+@inject AuthService AuthService
+@inject NavigationManager NavigationManager
+
+<h1>Administration Panel</h1>
+<p>This URL is restricted to admin users.</p>
+<button class="btn btn-outline-secondary mb-3" @onclick="SignOut">Sign Out</button>
+
+<EditForm Model="createRequest" OnSubmit="CreateUser">
+    <DataAnnotationsValidator />
+    <h4>Create User</h4>
+    <div class="mb-2">
+        <InputText class="form-control" placeholder="Display Name" @bind-Value="createRequest.DisplayName" />
+    </div>
+    <div class="mb-2">
+        <InputText class="form-control" placeholder="Email" @bind-Value="createRequest.Email" />
+    </div>
+    <div class="mb-2">
+        <InputText class="form-control" type="password" placeholder="Password" @bind-Value="createRequest.Password" />
+    </div>
+    <div class="form-check">
+        <InputCheckbox class="form-check-input" @bind-Value="createRequest.IsAdmin" />
+        <label class="form-check-label">Admin role</label>
+    </div>
+    <div class="form-check mb-2">
+        <InputCheckbox class="form-check-input" @bind-Value="createRequest.IsCustomer" />
+        <label class="form-check-label">Customer role</label>
+    </div>
+    <button class="btn btn-primary" type="submit">Create</button>
+</EditForm>
+
+@if (!string.IsNullOrWhiteSpace(statusMessage))
+{
+    <p class="mt-2 @(isError ? "text-danger" : "text-success")">@statusMessage</p>
+}
+
+<h4 class="mt-4">Users and Status</h4>
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Email</th>
+            <th>Name</th>
+            <th>Roles</th>
+            <th>Disabled</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var user in users)
+    {
+        <tr>
+            <td>@user.Email</td>
+            <td>@user.DisplayName</td>
+            <td>@string.Join(", ", user.Roles)</td>
+            <td>@user.IsDisabled</td>
+            <td>
+                <button class="btn btn-sm btn-outline-warning" @onclick="() => ToggleStatus(user)">
+                    @(user.IsDisabled ? "Enable" : "Disable")
+                </button>
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+
+@code {
+    private List<UserProfileDto> users = new();
+    private AdminCreateUserRequest createRequest = new();
+    private string? statusMessage;
+    private bool isError;
+
+    protected override async Task OnInitializedAsync() => users = await ApiClient.AdminUsersAsync();
+
+    private async Task CreateUser()
+    {
+        statusMessage = null;
+        isError = false;
+
+        if (string.IsNullOrWhiteSpace(createRequest.DisplayName) ||
+            string.IsNullOrWhiteSpace(createRequest.Email) ||
+            string.IsNullOrWhiteSpace(createRequest.Password))
+        {
+            isError = true;
+            statusMessage = "Display Name, Email, and Password are required.";
+            return;
+        }
+
+        var result = await ApiClient.AdminCreateUserAsync(createRequest);
+        if (result.Success)
+        {
+            statusMessage = "User created successfully.";
+            createRequest = new AdminCreateUserRequest();
+            users = await ApiClient.AdminUsersAsync();
+            return;
+        }
+
+        isError = true;
+        statusMessage = result.Error;
+    }
+
+    private async Task ToggleStatus(UserProfileDto user)
+    {
+        if (await ApiClient.SetUserStatusAsync(user.Id, !user.IsDisabled))
+        {
+            users = await ApiClient.AdminUsersAsync();
+        }
+    }
+
+    private async Task SignOut()
+    {
+        await AuthService.LogoutAsync();
+        NavigationManager.NavigateTo("/auth/login", true);
+    }
+}
