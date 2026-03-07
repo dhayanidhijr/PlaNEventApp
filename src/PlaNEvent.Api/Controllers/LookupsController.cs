@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,6 +15,34 @@ namespace PlaNEvent.Api.Controllers;
 [Authorize]
 public sealed class LookupsController(AppDbContext dbContext, IActivityService activityService) : ControllerBase
 {
+    [HttpGet("countries")]
+    [AllowAnonymous]
+    public ActionResult<IReadOnlyCollection<CountryDto>> Countries()
+    {
+        var countries = CultureInfo
+            .GetCultures(CultureTypes.SpecificCultures)
+            .Select(culture =>
+            {
+                try
+                {
+                    var region = new RegionInfo(culture.Name);
+                    return new CountryDto { Code = region.TwoLetterISORegionName, Name = region.EnglishName };
+                }
+                catch
+                {
+                    return null;
+                }
+            })
+            .Where(country => country is not null)
+            .DistinctBy(country => country!.Code)
+            .Select(country => country!)
+            .Where(country => country.Code.Length == 2 && country.Code.All(char.IsLetter))
+            .OrderBy(country => country.Name)
+            .ToList();
+
+        return Ok(countries);
+    }
+
     [HttpGet("groups")]
     public async Task<ActionResult<IReadOnlyCollection<EventGroupDto>>> Groups()
     {
