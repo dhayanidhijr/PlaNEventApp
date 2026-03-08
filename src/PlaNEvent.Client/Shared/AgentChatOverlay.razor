@@ -7,7 +7,7 @@
     <div class="agent-chat-overlay" @onclick="CloseIfBackdrop">
         <div class="agent-chat-panel" @onclick:stopPropagation>
             <div class="agent-chat-header">
-                <strong>DaWin Agent</strong>
+                <strong>Sage Agent</strong>
                 <button class="btn btn-sm btn-light" @onclick="Close">Close</button>
             </div>
 
@@ -21,7 +21,7 @@
                     @foreach (var item in messages)
                     {
                         <div class="agent-msg @(item.IsUser ? "user" : "agent")">
-                            <div class="agent-msg-role">@(item.IsUser ? "You" : "DaWin Response")</div>
+                            <div class="agent-msg-role">@(item.IsUser ? "You" : "Sage Response")</div>
                             @if (item.IsHtml)
                             {
                                 <div>@((MarkupString)item.Text)</div>
@@ -110,6 +110,7 @@
 
     private sealed record ChatLine(bool IsUser, string Text, bool IsHtml);
 }
+
 
 
 
