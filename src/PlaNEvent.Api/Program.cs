@@ -1,4 +1,6 @@
 using System.Text;
+using Amazon;
+using Amazon.BedrockAgentCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +15,18 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
+builder.Services.Configure<AgentCoreOptions>(builder.Configuration.GetSection(AgentCoreOptions.SectionName));
+
+builder.Services.AddSingleton<IAmazonBedrockAgentCore>(sp =>
+{
+    var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AgentCoreOptions>>().Value;
+    var regionName = string.IsNullOrWhiteSpace(options.Region)
+        ? "us-east-1"
+        : options.Region;
+
+    return new AmazonBedrockAgentCoreClient(RegionEndpoint.GetBySystemName(regionName));
+});
+builder.Services.AddScoped<IAgentCoreChatService, AgentCoreChatService>();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));

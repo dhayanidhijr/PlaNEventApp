@@ -17,6 +17,7 @@ builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredServ
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<ApiClient>();
 builder.Services.AddScoped<BookingService>();
+builder.Services.AddScoped<AgentChatOverlayState>();
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(apiBaseUrl) });
 
 await builder.Build().RunAsync();
