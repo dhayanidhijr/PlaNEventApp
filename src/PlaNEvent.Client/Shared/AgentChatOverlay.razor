@@ -1,4 +1,4 @@
-﻿@implements IDisposable
+@implements IDisposable
 @inject ApiClient Api
 @inject AgentChatOverlayState OverlayState
 
@@ -38,7 +38,7 @@
             <EditForm Model="this" OnValidSubmit="SendAsync">
                 <div class="agent-chat-input">
                     <InputText class="form-control" @bind-Value="prompt" placeholder="Ask the agent..." />
-                    <button type="submit" class="btn btn-primary" disabled="@isSending">@(isSending ? "Sending..." : "Send")</button>
+                    <button type="submit" class="btn btn-primary" disabled="@isSending">@(isSending ? "Thinking..." : "Send")</button>
                 </div>
             </EditForm>
         </div>
@@ -110,3 +110,4 @@
 
     private sealed record ChatLine(bool IsUser, string Text, bool IsHtml);
 }
+
