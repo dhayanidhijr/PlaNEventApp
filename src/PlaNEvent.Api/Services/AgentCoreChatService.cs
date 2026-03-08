@@ -77,12 +77,17 @@ public sealed class AgentCoreChatService(IAmazonBedrockAgentCore bedrockClient, 
     private static string NormalizeSessionId(string? sessionId)
     {
         var normalized = string.IsNullOrWhiteSpace(sessionId)
-            ? $"session-{Guid.NewGuid():N}-{Guid.NewGuid():N}"
+            ? $"session{Guid.NewGuid():N}"
             : sessionId.Trim();
 
         if (normalized.Length < 33)
         {
-            normalized = $"{normalized}-{Guid.NewGuid():N}";
+            normalized += Guid.NewGuid().ToString("N");
+        }
+
+        if (normalized.Length > 100)
+        {
+            normalized = normalized[..100];
         }
 
         return normalized;
@@ -124,6 +129,27 @@ public sealed class AgentCoreChatService(IAmazonBedrockAgentCore bedrockClient, 
                 if (TryGetString(first, "text", out var text)) return text;
                 if (first.ValueKind == JsonValueKind.String) return first.GetString() ?? payload;
             }
+
+            if (root.TryGetProperty("result", out var result))
+            {
+                if (TryGetString(result, "outputText", out var resultOutput)) return resultOutput;
+                if (TryGetString(result, "response", out var resultResponse)) return resultResponse;
+                if (TryGetString(result, "message", out var resultMessage)) return resultMessage;
+
+                if (result.TryGetProperty("content", out var resultContent)
+                    && resultContent.ValueKind == JsonValueKind.Array
+                    && resultContent.GetArrayLength() > 0)
+                {
+                    foreach (var item in resultContent.EnumerateArray())
+                    {
+                        if (TryGetString(item, "text", out var resultText)) return resultText;
+                        if (item.ValueKind == JsonValueKind.String)
+                        {
+                            return item.GetString() ?? payload;
+                        }
+                    }
+                }
+            }
         }
         catch
         {
@@ -145,3 +171,4 @@ public sealed class AgentCoreChatService(IAmazonBedrockAgentCore bedrockClient, 
         return false;
     }
 }
+
