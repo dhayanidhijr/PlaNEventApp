@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using Amazon.BedrockAgentCore;
@@ -22,23 +23,58 @@ public sealed class AgentCoreChatService(IAmazonBedrockAgentCore bedrockClient, 
 
         if (string.IsNullOrWhiteSpace(request.Message))
         {
-            return new AgentChatResponse { SessionId = sessionId, Reply = "Please provide a message." };
+            return new AgentChatResponse { SessionId = sessionId, Reply = "Please provide a message.", HtmlReply = "<p>Please provide a message.</p>" };
         }
 
         if (string.IsNullOrWhiteSpace(optionsValue.AgentRuntimeArn))
         {
+            const string message = "AgentCore runtime ARN is not configured. Set AgentCore:AgentRuntimeArn in API settings.";
             return new AgentChatResponse
             {
                 SessionId = sessionId,
-                Reply = "AgentCore runtime ARN is not configured. Set AgentCore:AgentRuntimeArn in API settings."
+                Reply = message,
+                HtmlReply = $"<p>{WebUtility.HtmlEncode(message)}</p>"
             };
         }
 
+        try
+        {
+            var firstPass = await InvokeAndExtractAsync(request.Message, sessionId, cancellationToken);
+            var answerText = string.IsNullOrWhiteSpace(firstPass.Reply) ? "No response from agent." : firstPass.Reply;
+
+            var htmlFormatPrompt = BuildHtmlFormatPrompt(answerText);
+            var formatPass = await InvokeAndExtractAsync(htmlFormatPrompt, firstPass.SessionId, cancellationToken);
+
+            var html = string.IsNullOrWhiteSpace(formatPass.Reply)
+                ? $"<p>{WebUtility.HtmlEncode(answerText)}</p>"
+                : formatPass.Reply;
+
+            return new AgentChatResponse
+            {
+                SessionId = formatPass.SessionId,
+                Reply = answerText,
+                HtmlReply = html
+            };
+        }
+        catch (Exception ex)
+        {
+            var message = $"AgentCore call failed: {ex.Message}";
+            return new AgentChatResponse
+            {
+                SessionId = sessionId,
+                Reply = message,
+                HtmlReply = $"<p>{WebUtility.HtmlEncode(message)}</p>"
+            };
+        }
+    }
+
+    private async Task<(string SessionId, string Reply)> InvokeAndExtractAsync(string prompt, string sessionId, CancellationToken cancellationToken)
+    {
         var payloadJson = JsonSerializer.Serialize(new
         {
-            prompt = request.Message,
-            message = request.Message,
-            inputText = request.Message
+            prompt,
+            message = prompt,
+            inputText = prompt
         });
 
         using var payloadStream = new MemoryStream(Encoding.UTF8.GetBytes(payloadJson));
@@ -53,25 +89,25 @@ public sealed class AgentCoreChatService(IAmazonBedrockAgentCore bedrockClient, 
             Payload = payloadStream
         };
 
-        try
-        {
-            var response = await bedrockClient.InvokeAgentRuntimeAsync(invokeRequest, cancellationToken);
-            var responseText = await ReadResponseAsync(response);
+        var response = await bedrockClient.InvokeAgentRuntimeAsync(invokeRequest, cancellationToken);
+        var responseText = await ReadResponseAsync(response);
 
-            return new AgentChatResponse
-            {
-                SessionId = response.RuntimeSessionId ?? sessionId,
-                Reply = ExtractReply(responseText)
-            };
-        }
-        catch (Exception ex)
-        {
-            return new AgentChatResponse
-            {
-                SessionId = sessionId,
-                Reply = $"AgentCore call failed: {ex.Message}"
-            };
-        }
+        return (response.RuntimeSessionId ?? sessionId, ExtractReply(responseText));
+    }
+
+    private static string BuildHtmlFormatPrompt(string answerText)
+    {
+        return $"""
+Format the following assistant answer as clean semantic HTML for a web chat response.
+Rules:
+- Return only valid HTML fragment (no markdown fences).
+- Do not include <html>, <head>, <body>, <script>, or <style>.
+- Use only safe tags like p, ul, ol, li, strong, em, code, pre, a, h1-h4, blockquote, br.
+- Preserve meaning and structure.
+
+Answer:
+{answerText}
+""";
     }
 
     private static string NormalizeSessionId(string? sessionId)
@@ -171,4 +207,3 @@ public sealed class AgentCoreChatService(IAmazonBedrockAgentCore bedrockClient, 
         return false;
     }
 }
-

@@ -1,4 +1,4 @@
-@implements IDisposable
+﻿@implements IDisposable
 @inject ApiClient Api
 @inject AgentChatOverlayState OverlayState
 
@@ -22,7 +22,14 @@
                     {
                         <div class="agent-msg @(item.IsUser ? "user" : "agent")">
                             <div class="agent-msg-role">@(item.IsUser ? "You" : "Agent")</div>
-                            <div>@item.Text</div>
+                            @if (item.IsHtml)
+                            {
+                                <div>@((MarkupString)item.Text)</div>
+                            }
+                            else
+                            {
+                                <div>@item.Text</div>
+                            }
                         </div>
                     }
                 }
@@ -70,7 +77,7 @@
 
         var text = prompt.Trim();
         prompt = string.Empty;
-        messages.Add(new ChatLine(true, text));
+        messages.Add(new ChatLine(true, text, false));
         isSending = true;
 
         try
@@ -82,11 +89,13 @@
             });
 
             sessionId = response?.SessionId ?? sessionId;
-            messages.Add(new ChatLine(false, response?.Reply ?? "No response from agent."));
+            var replyText = response?.Reply ?? "No response from agent.";
+            var replyHtml = response?.HtmlReply;
+            messages.Add(new ChatLine(false, string.IsNullOrWhiteSpace(replyHtml) ? replyText : replyHtml!, !string.IsNullOrWhiteSpace(replyHtml)));
         }
         catch (Exception ex)
         {
-            messages.Add(new ChatLine(false, $"Error: {ex.Message}"));
+            messages.Add(new ChatLine(false, $"Error: {ex.Message}", false));
         }
         finally
         {
@@ -99,5 +108,5 @@
         OverlayState.Changed -= OnOverlayChanged;
     }
 
-    private sealed record ChatLine(bool IsUser, string Text);
+    private sealed record ChatLine(bool IsUser, string Text, bool IsHtml);
 }
