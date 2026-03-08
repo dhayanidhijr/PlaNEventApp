@@ -1,7 +1,14 @@
-aws_region      = "us-east-1"
-project_name    = "planevent"
-repository_url  = "https://github.com/your-org/DaWinCalendarService.git"
-repository_branch = "main"
-project_directory = "DaWinCalendarService"
-ssh_cidr        = "0.0.0.0/0"
-# key_name      = "your-keypair"
+aws_region               = "us-east-1"
+project_name             = "planevent"
+repository_url           = "https://github.com/your-org/DaWinCalendarService.git"
+repository_branch        = "develop"
+project_directory        = "DaWinCalendarService"
+ssh_cidr                 = "0.0.0.0/0"
+
+# Bedrock AgentCore runtime details used by IAM/policy wiring
+agent_runtime_arn        = "arn:aws:bedrock-agentcore:us-east-1:352115226302:runtime/hosted_agent_axa7j-JcrnWd2poQ"
+agent_runtime_endpoint_arn = "arn:aws:bedrock-agentcore:us-east-1:352115226302:runtime/hosted_agent_axa7j-JcrnWd2poQ/runtime-endpoint/DEFAULT"
+agentcore_runtime_role_name = "AmazonBedrockAgentCoreRuntimeDefaultServiceRole-uo73l"
+agentcore_runtime_exec_policy_name = "AmazonBedrockAgentCoreRuntimeExecutionPolicy_ue1fix"
+
+# key_name               = "your-keypair"

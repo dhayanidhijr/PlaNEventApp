@@ -38,3 +38,27 @@ variable "project_directory" {
   description = "Directory name on EC2"
   default     = "DaWinCalendarService"
 }
+
+variable "agent_runtime_arn" {
+  type        = string
+  description = "Bedrock AgentCore runtime ARN used by the application."
+  default     = "arn:aws:bedrock-agentcore:us-east-1:352115226302:runtime/hosted_agent_axa7j-JcrnWd2poQ"
+}
+
+variable "agent_runtime_endpoint_arn" {
+  type        = string
+  description = "Bedrock AgentCore runtime endpoint ARN used by the application."
+  default     = "arn:aws:bedrock-agentcore:us-east-1:352115226302:runtime/hosted_agent_axa7j-JcrnWd2poQ/runtime-endpoint/DEFAULT"
+}
+
+variable "agentcore_runtime_role_name" {
+  type        = string
+  description = "IAM role name used by Bedrock AgentCore runtime."
+  default     = "AmazonBedrockAgentCoreRuntimeDefaultServiceRole-uo73l"
+}
+
+variable "agentcore_runtime_exec_policy_name" {
+  type        = string
+  description = "IAM policy name attached to AgentCore runtime execution role."
+  default     = "AmazonBedrockAgentCoreRuntimeExecutionPolicy_ue1fix"
+}
