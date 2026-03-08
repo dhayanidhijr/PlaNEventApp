@@ -2,25 +2,29 @@
 @inject AuthService AuthService
 @inject NavigationManager NavigationManager
 
-<h1>Login</h1>
+<div class="login-page">
+    <div class="login-card">
+        <h1>Login</h1>
 
-<EditForm Model="model" OnValidSubmit="HandleSubmit">
-    <DataAnnotationsValidator />
-    <div class="mb-3">
-        <label>Email</label>
-        <InputText class="form-control" @bind-Value="model.Email" />
-    </div>
-    <div class="mb-3">
-        <label>Password</label>
-        <InputText class="form-control" type="password" @bind-Value="model.Password" />
-    </div>
-    <button class="btn btn-primary" type="submit">Sign In</button>
-</EditForm>
+        <EditForm Model="model" OnValidSubmit="HandleSubmit">
+            <DataAnnotationsValidator />
+            <div class="mb-3">
+                <label>Email</label>
+                <InputText class="form-control" @bind-Value="model.Email" />
+            </div>
+            <div class="mb-3">
+                <label>Password</label>
+                <InputText class="form-control" type="password" @bind-Value="model.Password" />
+            </div>
+            <button class="btn btn-primary" type="submit">Sign In</button>
+        </EditForm>
 
-@if (!string.IsNullOrWhiteSpace(error))
-{
-    <p class="text-danger mt-2">@error</p>
-}
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <p class="text-danger mt-2">@error</p>
+        }
+    </div>
+</div>
 
 @code {
     private LoginModel model = new();

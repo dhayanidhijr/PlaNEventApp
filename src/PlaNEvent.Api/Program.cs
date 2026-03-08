@@ -93,6 +93,7 @@ builder.Services.AddSwaggerGen(options =>
             Array.Empty<string>()
         }
     });
+    options.OperationFilter<McpExamplesOperationFilter>();
 });
 
 var app = builder.Build();
