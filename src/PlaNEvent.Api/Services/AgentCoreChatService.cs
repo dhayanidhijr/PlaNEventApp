@@ -77,12 +77,17 @@ public sealed class AgentCoreChatService(IAmazonBedrockAgentCore bedrockClient, 
     private static string NormalizeSessionId(string? sessionId)
     {
         var normalized = string.IsNullOrWhiteSpace(sessionId)
-            ? $"session-{Guid.NewGuid():N}-{Guid.NewGuid():N}"
+            ? $"session{Guid.NewGuid():N}"
             : sessionId.Trim();
 
         if (normalized.Length < 33)
         {
-            normalized = $"{normalized}-{Guid.NewGuid():N}";
+            normalized += Guid.NewGuid().ToString("N");
+        }
+
+        if (normalized.Length > 100)
+        {
+            normalized = normalized[..100];
         }
 
         return normalized;
