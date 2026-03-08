@@ -1,33 +1,35 @@
-﻿@inject NavigationManager NavigationManager
+@inject NavigationManager NavigationManager
+@inject AgentChatOverlayState AgentChatOverlayState
 
-<div class="brand-block" title="PlaNEvent">
-    <img class="brand-logo" src="images/planevent-logo.png" alt="PlaNEvent" />
-    <div class="brand-text">PlaNEvent</div>
+<div class="app-brand-block" title="PlaNEvent">
+    <img class="app-brand-logo" src="images/planevent-logo.png" alt="PlaNEvent" />
+    <div class="app-brand-text">PlaNEvent</div>
 </div>
 
-<div class="nav-scrollable">
+<div class="app-nav-scrollable">
     <AuthorizeView>
         <Authorized Context="authState">
-            <nav class="side-nav">
-                <NavLink class="side-link" href="" Match="NavLinkMatch.All">Home</NavLink>
-                <NavLink class="side-link" href="calendar">Calendar</NavLink>
-                <NavLink class="side-link" href="occurrences">Occurrence</NavLink>
-                <NavLink class="side-link" href="groups">Group Management</NavLink>
-                <NavLink class="side-link" href="staff">Staff</NavLink>
-                <NavLink class="side-link" href="customers">Customers</NavLink>
-                <NavLink class="side-link" href="bookings">Booking Management</NavLink>
-                <NavLink class="side-link" href="profile">Account</NavLink>
+            <nav class="app-side-nav">
+                <NavLink class="app-side-link" href="" Match="NavLinkMatch.All">Home</NavLink>
+                <NavLink class="app-side-link" href="calendar">Calendar</NavLink>
+                <NavLink class="app-side-link" href="occurrences">Occurrence</NavLink>
+                <NavLink class="app-side-link" href="groups">Group Management</NavLink>
+                <NavLink class="app-side-link" href="staff">Staff</NavLink>
+                <NavLink class="app-side-link" href="customers">Customers</NavLink>
+                <NavLink class="app-side-link" href="bookings">Booking Management</NavLink>
+                <NavLink class="app-side-link" href="profile">Account</NavLink>
+                <button class="app-side-link app-side-btn" @onclick="OpenAgentChat">Agent Chat</button>
                 @if (authState.User.IsInRole("Admin"))
                 {
-                    <NavLink class="side-link" href="admin/users">Admin Panel</NavLink>
+                    <NavLink class="app-side-link" href="admin/users">Admin Panel</NavLink>
                 }
-                <button class="side-link side-btn" @onclick="Logout">Logout</button>
+                <button class="app-side-link app-side-btn" @onclick="Logout">Logout</button>
             </nav>
         </Authorized>
         <NotAuthorized>
-            <nav class="side-nav">
-                <NavLink class="side-link" href="auth/login">Login</NavLink>
-                <NavLink class="side-link" href="auth/register">Register</NavLink>
+            <nav class="app-side-nav">
+                <NavLink class="app-side-link" href="auth/login">Login</NavLink>
+                <NavLink class="app-side-link" href="auth/register">Register</NavLink>
             </nav>
         </NotAuthorized>
     </AuthorizeView>
@@ -35,6 +37,8 @@
 
 @code {
     [Inject] private AuthService AuthService { get; set; } = default!;
+
+    private void OpenAgentChat() => AgentChatOverlayState.Open();
 
     private async Task Logout()
     {

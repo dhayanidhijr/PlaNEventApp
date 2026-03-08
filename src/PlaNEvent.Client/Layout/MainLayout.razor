@@ -2,20 +2,20 @@
 @inject AuthService AuthService
 @inject NavigationManager NavigationManager
 
-<div class="page">
-    <div class="sidebar">
+<div class="app-shell">
+    <aside class="app-sidebar">
         <NavMenu />
-    </div>
+    </aside>
 
-    <main>
-        <header class="workspace-topbar px-4">
-            <div class="topbar-left">
+    <main class="app-main">
+        <header class="app-topbar px-4">
+            <div class="app-topbar-left">
                 <span>@DateTime.Now.ToString("MMMM dd, yyyy")</span>
                 <span>@DateTime.Now.ToString("hh:mm:ss tt")</span>
                 <span>@($"(UTC{DateTimeOffset.Now:zzz})")</span>
             </div>
-            <div class="topbar-right">
-                <select class="form-select form-select-sm city-select" @bind="city">
+            <div class="app-topbar-right">
+                <select class="form-select form-select-sm app-city-select" @bind="city">
                     <option>New York City</option>
                     <option>Chennai City</option>
                     <option>London City</option>
@@ -28,11 +28,13 @@
             </div>
         </header>
 
-        <article class="content px-4">
+        <article class="app-content px-4">
             @Body
         </article>
     </main>
 </div>
+
+<AgentChatOverlay />
 
 @code {
     private string city = "New York City";

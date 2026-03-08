@@ -1,0 +1,103 @@
+@implements IDisposable
+@inject ApiClient Api
+@inject AgentChatOverlayState OverlayState
+
+@if (OverlayState.IsOpen)
+{
+    <div class="agent-chat-overlay" @onclick="CloseIfBackdrop">
+        <div class="agent-chat-panel" @onclick:stopPropagation>
+            <div class="agent-chat-header">
+                <strong>Agent Chat</strong>
+                <button class="btn btn-sm btn-light" @onclick="Close">Close</button>
+            </div>
+
+            <div class="agent-chat-body" id="agent-chat-body">
+                @if (messages.Count == 0)
+                {
+                    <p class="agent-chat-muted">Connected to AgentCore hosted_agent_axa7j. Start the conversation.</p>
+                }
+                else
+                {
+                    @foreach (var item in messages)
+                    {
+                        <div class="agent-msg @(item.IsUser ? "user" : "agent")">
+                            <div class="agent-msg-role">@(item.IsUser ? "You" : "Agent")</div>
+                            <div>@item.Text</div>
+                        </div>
+                    }
+                }
+            </div>
+
+            <EditForm Model="this" OnValidSubmit="SendAsync">
+                <div class="agent-chat-input">
+                    <InputText class="form-control" @bind-Value="prompt" placeholder="Ask the agent..." />
+                    <button type="submit" class="btn btn-primary" disabled="@isSending">@(isSending ? "Sending..." : "Send")</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly List<ChatLine> messages = new();
+    private string prompt = string.Empty;
+    private string? sessionId;
+    private bool isSending;
+
+    protected override void OnInitialized()
+    {
+        OverlayState.Changed += OnOverlayChanged;
+    }
+
+    private void OnOverlayChanged() => InvokeAsync(StateHasChanged);
+
+    private void Close() => OverlayState.Close();
+
+    private void CloseIfBackdrop()
+    {
+        if (!isSending)
+        {
+            OverlayState.Close();
+        }
+    }
+
+    private async Task SendAsync()
+    {
+        if (string.IsNullOrWhiteSpace(prompt) || isSending)
+        {
+            return;
+        }
+
+        var text = prompt.Trim();
+        prompt = string.Empty;
+        messages.Add(new ChatLine(true, text));
+        isSending = true;
+
+        try
+        {
+            var response = await Api.AgentChatAsync(new AgentChatRequest
+            {
+                Message = text,
+                SessionId = sessionId
+            });
+
+            sessionId = response?.SessionId ?? sessionId;
+            messages.Add(new ChatLine(false, response?.Reply ?? "No response from agent."));
+        }
+        catch (Exception ex)
+        {
+            messages.Add(new ChatLine(false, $"Error: {ex.Message}"));
+        }
+        finally
+        {
+            isSending = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        OverlayState.Changed -= OnOverlayChanged;
+    }
+
+    private sealed record ChatLine(bool IsUser, string Text);
+}

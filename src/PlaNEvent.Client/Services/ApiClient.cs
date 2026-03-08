@@ -117,7 +117,24 @@ public sealed class ApiClient(HttpClient httpClient, TokenAuthenticationStatePro
         await AttachTokenAsync();
         return await httpClient.GetFromJsonAsync<List<BookingDto>>("api/bookings") ?? new List<BookingDto>();
     }
+    public async Task<AgentChatResponse?> AgentChatAsync(AgentChatRequest request)
+    {
+        await AttachTokenAsync();
+        var response = await httpClient.PostAsJsonAsync("api/agent/chat", request);
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            return new AgentChatResponse
+            {
+                SessionId = request.SessionId ?? string.Empty,
+                Reply = string.IsNullOrWhiteSpace(error)
+                    ? $"Agent chat failed: {(int)response.StatusCode}"
+                    : error
+            };
+        }
 
+        return await response.Content.ReadFromJsonAsync<AgentChatResponse>();
+    }
     private async Task AttachTokenAsync()
     {
         var token = await authStateProvider.GetTokenAsync();
