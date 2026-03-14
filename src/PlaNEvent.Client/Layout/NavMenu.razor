@@ -18,7 +18,7 @@
                 <NavLink class="app-side-link" href="customers">Customers</NavLink>
                 <NavLink class="app-side-link" href="bookings">Booking Management</NavLink>
                 <NavLink class="app-side-link" href="profile">Account</NavLink>
-                <button class="app-side-link app-side-btn" @onclick="OpenAgentChat">Sage Agent</button>
+                <button class="app-side-link app-side-btn" @onclick="OpenAgentChat">Sage AI</button>
                 @if (authState.User.IsInRole("Admin"))
                 {
                     <NavLink class="app-side-link" href="admin/users">Admin Panel</NavLink>

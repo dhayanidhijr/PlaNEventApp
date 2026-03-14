@@ -16,6 +16,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
 builder.Services.Configure<AgentCoreOptions>(builder.Configuration.GetSection(AgentCoreOptions.SectionName));
+builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddSingleton<IAmazonBedrockAgentCore>(sp =>
 {

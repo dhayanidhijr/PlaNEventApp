@@ -42,13 +42,13 @@ variable "project_directory" {
 variable "agent_runtime_arn" {
   type        = string
   description = "Bedrock AgentCore runtime ARN used by the application."
-  default     = "arn:aws:bedrock-agentcore:us-east-1:352115226302:runtime/hosted_agent_axa7j-JcrnWd2poQ"
+  default     = "arn:aws:bedrock-agentcore:us-east-1:352115226302:runtime/planeventsagedirect-e6Vq0UCkrk"
 }
 
 variable "agent_runtime_endpoint_arn" {
   type        = string
   description = "Bedrock AgentCore runtime endpoint ARN used by the application."
-  default     = "arn:aws:bedrock-agentcore:us-east-1:352115226302:runtime/hosted_agent_axa7j-JcrnWd2poQ/runtime-endpoint/DEFAULT"
+  default     = "arn:aws:bedrock-agentcore:us-east-1:352115226302:runtime/planeventsagedirect-e6Vq0UCkrk/runtime-endpoint/DEFAULT"
 }
 
 variable "agentcore_runtime_role_name" {

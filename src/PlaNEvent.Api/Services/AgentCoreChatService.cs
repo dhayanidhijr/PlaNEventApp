@@ -1,8 +1,11 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
 using Amazon.BedrockAgentCore;
 using Amazon.BedrockAgentCore.Model;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using PlaNEvent.Shared.Contracts;
 
@@ -13,7 +16,10 @@ public interface IAgentCoreChatService
     Task<AgentChatResponse> ChatAsync(AgentChatRequest request, CancellationToken cancellationToken);
 }
 
-public sealed class AgentCoreChatService(IAmazonBedrockAgentCore bedrockClient, IOptions<AgentCoreOptions> options) : IAgentCoreChatService
+public sealed class AgentCoreChatService(
+    IAmazonBedrockAgentCore bedrockClient,
+    IOptions<AgentCoreOptions> options,
+    IHttpContextAccessor httpContextAccessor) : IAgentCoreChatService
 {
     private readonly AgentCoreOptions optionsValue = options.Value;
 
@@ -43,7 +49,7 @@ public sealed class AgentCoreChatService(IAmazonBedrockAgentCore bedrockClient, 
             var answerText = string.IsNullOrWhiteSpace(firstPass.Reply) ? "No response from agent." : firstPass.Reply;
 
             var htmlFormatPrompt = BuildHtmlFormatPrompt(answerText);
-            var formatPass = await InvokeAndExtractAsync(htmlFormatPrompt, firstPass.SessionId, cancellationToken);
+            var formatPass = await InvokeAndExtractAsync(htmlFormatPrompt, BuildFormattingSessionId(firstPass.SessionId), cancellationToken);
 
             var html = string.IsNullOrWhiteSpace(formatPass.Reply)
                 ? $"<p>{WebUtility.HtmlEncode(answerText)}</p>"
@@ -51,7 +57,7 @@ public sealed class AgentCoreChatService(IAmazonBedrockAgentCore bedrockClient, 
 
             return new AgentChatResponse
             {
-                SessionId = formatPass.SessionId,
+                SessionId = firstPass.SessionId,
                 Reply = answerText,
                 HtmlReply = html
             };
@@ -70,11 +76,24 @@ public sealed class AgentCoreChatService(IAmazonBedrockAgentCore bedrockClient, 
 
     private async Task<(string SessionId, string Reply)> InvokeAndExtractAsync(string prompt, string sessionId, CancellationToken cancellationToken)
     {
+        var bearerToken = GetForwardedAccessToken();
         var payloadJson = JsonSerializer.Serialize(new
         {
+            sessionId,
             prompt,
             message = prompt,
-            inputText = prompt
+            inputText = prompt,
+            accessToken = bearerToken,
+            apiBaseUrl = optionsValue.ApiBaseUrl,
+            swaggerUrl = optionsValue.SwaggerUrl,
+            userContext = new
+            {
+                email = httpContextAccessor.HttpContext?.User?.Identity?.Name,
+                roles = httpContextAccessor.HttpContext?.User?.Claims
+                    .Where(claim => claim.Type.EndsWith("/role", StringComparison.OrdinalIgnoreCase) || claim.Type == "role")
+                    .Select(claim => claim.Value)
+                    .ToArray() ?? Array.Empty<string>()
+            }
         });
 
         using var payloadStream = new MemoryStream(Encoding.UTF8.GetBytes(payloadJson));
@@ -95,6 +114,25 @@ public sealed class AgentCoreChatService(IAmazonBedrockAgentCore bedrockClient, 
         return (response.RuntimeSessionId ?? sessionId, ExtractReply(responseText));
     }
 
+    private string? GetForwardedAccessToken()
+    {
+        if (!optionsValue.ForwardUserToken)
+        {
+            return null;
+        }
+
+        var authorization = httpContextAccessor.HttpContext?.Request.Headers.Authorization.ToString();
+        if (string.IsNullOrWhiteSpace(authorization))
+        {
+            return null;
+        }
+
+        const string bearerPrefix = "Bearer ";
+        return authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase)
+            ? authorization[bearerPrefix.Length..].Trim()
+            : authorization.Trim();
+    }
+
     private static string BuildHtmlFormatPrompt(string answerText)
     {
         return $"""
@@ -112,13 +150,16 @@ Answer:
 
     private static string NormalizeSessionId(string? sessionId)
     {
-        var normalized = string.IsNullOrWhiteSpace(sessionId)
-            ? $"session{Guid.NewGuid():N}"
-            : sessionId.Trim();
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return $"session{Guid.NewGuid():N}";
+        }
 
+        var normalized = sessionId.Trim();
         if (normalized.Length < 33)
         {
-            normalized += Guid.NewGuid().ToString("N");
+            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized))).ToLowerInvariant();
+            normalized += hash[..(33 - normalized.Length)];
         }
 
         if (normalized.Length > 100)
@@ -127,6 +168,16 @@ Answer:
         }
 
         return normalized;
+    }
+
+    private static string BuildFormattingSessionId(string sessionId)
+    {
+        var baseId = string.IsNullOrWhiteSpace(sessionId)
+            ? $"session{Guid.NewGuid():N}"
+            : sessionId.Trim();
+
+        var formattingSessionId = $"{baseId}-fmt";
+        return formattingSessionId.Length > 100 ? formattingSessionId[..100] : formattingSessionId;
     }
 
     private static async Task<string> ReadResponseAsync(InvokeAgentRuntimeResponse response)
@@ -142,9 +193,19 @@ Answer:
 
     private static string ExtractReply(string payload)
     {
+        return ExtractReply(payload, 0);
+    }
+
+    private static string ExtractReply(string payload, int depth)
+    {
         if (string.IsNullOrWhiteSpace(payload))
         {
             return string.Empty;
+        }
+
+        if (depth >= 4)
+        {
+            return payload.Trim();
         }
 
         try
@@ -152,25 +213,25 @@ Answer:
             using var doc = JsonDocument.Parse(payload);
             var root = doc.RootElement;
 
-            if (TryGetString(root, "outputText", out var outputText)) return outputText;
-            if (TryGetString(root, "response", out var response)) return response;
-            if (TryGetString(root, "message", out var message)) return message;
-            if (TryGetString(root, "completion", out var completion)) return completion;
+            if (TryGetString(root, "outputText", out var outputText)) return ExtractReply(outputText, depth + 1);
+            if (TryGetString(root, "response", out var response)) return ExtractReply(response, depth + 1);
+            if (TryGetString(root, "message", out var message)) return ExtractReply(message, depth + 1);
+            if (TryGetString(root, "completion", out var completion)) return ExtractReply(completion, depth + 1);
 
             if (root.TryGetProperty("content", out var content)
                 && content.ValueKind == JsonValueKind.Array
                 && content.GetArrayLength() > 0)
             {
                 var first = content[0];
-                if (TryGetString(first, "text", out var text)) return text;
-                if (first.ValueKind == JsonValueKind.String) return first.GetString() ?? payload;
+                if (TryGetString(first, "text", out var text)) return ExtractReply(text, depth + 1);
+                if (first.ValueKind == JsonValueKind.String) return ExtractReply(first.GetString() ?? payload, depth + 1);
             }
 
             if (root.TryGetProperty("result", out var result))
             {
-                if (TryGetString(result, "outputText", out var resultOutput)) return resultOutput;
-                if (TryGetString(result, "response", out var resultResponse)) return resultResponse;
-                if (TryGetString(result, "message", out var resultMessage)) return resultMessage;
+                if (TryGetString(result, "outputText", out var resultOutput)) return ExtractReply(resultOutput, depth + 1);
+                if (TryGetString(result, "response", out var resultResponse)) return ExtractReply(resultResponse, depth + 1);
+                if (TryGetString(result, "message", out var resultMessage)) return ExtractReply(resultMessage, depth + 1);
 
                 if (result.TryGetProperty("content", out var resultContent)
                     && resultContent.ValueKind == JsonValueKind.Array
@@ -178,10 +239,10 @@ Answer:
                 {
                     foreach (var item in resultContent.EnumerateArray())
                     {
-                        if (TryGetString(item, "text", out var resultText)) return resultText;
+                        if (TryGetString(item, "text", out var resultText)) return ExtractReply(resultText, depth + 1);
                         if (item.ValueKind == JsonValueKind.String)
                         {
-                            return item.GetString() ?? payload;
+                            return ExtractReply(item.GetString() ?? payload, depth + 1);
                         }
                     }
                 }
@@ -189,10 +250,13 @@ Answer:
         }
         catch
         {
-            // Fall through and return raw payload.
+            if (TryExtractPseudoJsonText(payload, out var pseudoJsonText))
+            {
+                return ExtractReply(pseudoJsonText, depth + 1);
+            }
         }
 
-        return payload;
+        return payload.Trim();
     }
 
     private static bool TryGetString(JsonElement element, string propertyName, out string value)
@@ -205,5 +269,23 @@ Answer:
 
         value = string.Empty;
         return false;
+    }
+
+    private static bool TryExtractPseudoJsonText(string payload, out string value)
+    {
+        var matches = Regex.Matches(payload, @"['""]text['""]\s*:\s*(?<quote>['""])(?<value>(?:\\.|(?!\k<quote>).)*)\k<quote>");
+        if (matches.Count == 0)
+        {
+            value = string.Empty;
+            return false;
+        }
+
+        var texts = matches
+            .Select(match => Regex.Unescape(match.Groups["value"].Value).Trim())
+            .Where(text => !string.IsNullOrWhiteSpace(text))
+            .ToArray();
+
+        value = texts.Length == 0 ? string.Empty : string.Join("\n\n", texts);
+        return texts.Length > 0;
     }
 }

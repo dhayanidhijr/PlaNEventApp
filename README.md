@@ -66,6 +66,14 @@ GitHub Actions workflow: `.github/workflows/ci-cd.yml`
 - Deploys to EC2 using AWS SSM Run Command
 - Requires secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `EC2_INSTANCE_ID`
 
+## Sage AI agent project
+
+The Strands-based Sage AI runtime project lives under `src/PlaNEvent.SageAgent`.
+
+- It targets Amazon Bedrock AgentCore Runtime using the official Python SDK runtime entrypoint model.
+- It loads PlaNEvent operations dynamically from Swagger and exposes them as authenticated tools.
+- It expects the caller to provide a PlaNEvent bearer token so the agent can act on behalf of the signed-in user.
+
 ## Notes
 
 - This is a production-ready scaffold with core use-case coverage and extension points.

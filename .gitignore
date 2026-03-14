@@ -13,3 +13,6 @@ terraform.tfstate.*
 tools/
 
 aicommands/
+__pycache__/
+*.pyc
+.venv/

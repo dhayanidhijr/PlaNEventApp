@@ -7,14 +7,17 @@
     <div class="agent-chat-overlay" @onclick="CloseIfBackdrop">
         <div class="agent-chat-panel" @onclick:stopPropagation>
             <div class="agent-chat-header">
-                <strong>Sage Agent</strong>
-                <button class="btn btn-sm btn-light" @onclick="Close">Close</button>
+                <strong>Sage AI</strong>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="ClearConversation" disabled="@isSending">New Chat</button>
+                    <button class="btn btn-sm btn-light" @onclick="Close">Close</button>
+                </div>
             </div>
 
             <div class="agent-chat-body" id="agent-chat-body">
                 @if (messages.Count == 0)
                 {
-                    <p class="agent-chat-muted">Connected to AgentCore hosted_agent_axa7j. Start the conversation.</p>
+                    <p class="agent-chat-muted">Connected to Sage AI. Ask about bookings, occurrences, staff, groups, customers, or account actions.</p>
                 }
                 else
                 {
@@ -46,15 +49,15 @@
 }
 
 @code {
-    private readonly List<ChatLine> messages = new();
     private string prompt = string.Empty;
-    private string? sessionId;
     private bool isSending;
 
     protected override void OnInitialized()
     {
         OverlayState.Changed += OnOverlayChanged;
     }
+
+    private IReadOnlyList<AgentChatOverlayState.ChatLine> messages => OverlayState.Messages;
 
     private void OnOverlayChanged() => InvokeAsync(StateHasChanged);
 
@@ -77,7 +80,7 @@
 
         var text = prompt.Trim();
         prompt = string.Empty;
-        messages.Add(new ChatLine(true, text, false));
+        OverlayState.AddMessage(new AgentChatOverlayState.ChatLine(true, text, false));
         isSending = true;
 
         try
@@ -85,17 +88,17 @@
             var response = await Api.AgentChatAsync(new AgentChatRequest
             {
                 Message = text,
-                SessionId = sessionId
+                SessionId = OverlayState.SessionId
             });
 
-            sessionId = response?.SessionId ?? sessionId;
+            OverlayState.SessionId = response?.SessionId ?? OverlayState.SessionId;
             var replyText = response?.Reply ?? "No response from agent.";
             var replyHtml = response?.HtmlReply;
-            messages.Add(new ChatLine(false, string.IsNullOrWhiteSpace(replyHtml) ? replyText : replyHtml!, !string.IsNullOrWhiteSpace(replyHtml)));
+            OverlayState.AddMessage(new AgentChatOverlayState.ChatLine(false, string.IsNullOrWhiteSpace(replyHtml) ? replyText : replyHtml!, !string.IsNullOrWhiteSpace(replyHtml)));
         }
         catch (Exception ex)
         {
-            messages.Add(new ChatLine(false, $"Error: {ex.Message}", false));
+            OverlayState.AddMessage(new AgentChatOverlayState.ChatLine(false, $"Error: {ex.Message}", false));
         }
         finally
         {
@@ -103,12 +106,18 @@
         }
     }
 
+    private void ClearConversation()
+    {
+        if (!isSending)
+        {
+            OverlayState.ClearConversation();
+        }
+    }
+
     public void Dispose()
     {
         OverlayState.Changed -= OnOverlayChanged;
     }
-
-    private sealed record ChatLine(bool IsUser, string Text, bool IsHtml);
 }
 
 
