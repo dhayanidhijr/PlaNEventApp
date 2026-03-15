@@ -62,19 +62,27 @@
     min-width: min(100%, 18rem);
 }
 
+.agent-transition-shell {
+    display: grid;
+    align-items: start;
+}
+
+.agent-transition-shell > * {
+    grid-area: 1 / 1;
+}
+
 .agent-msg-text.plain-underlay {
-    color: #5c6c85;
+    color: rgba(92, 108, 133, 0.18);
+    text-shadow: 0 0 0.4px rgba(92, 108, 133, 0.25);
 }
 
 .agent-msg-html-overlay {
-    position: absolute;
-    inset: 0 auto auto 0;
     width: 100%;
-    max-width: 100%;
     overflow: hidden;
     color: inherit;
     white-space: normal;
-    animation: sageHtmlReveal 1.15s steps(24, end) forwards;
+    clip-path: inset(0 100% 0 0);
+    animation: sageHtmlReveal 1.05s linear forwards;
     pointer-events: none;
 }
 
@@ -150,13 +158,13 @@
 
 @keyframes sageHtmlReveal {
     from {
-        max-width: 0;
-        opacity: 0.85;
-        filter: saturate(0.85);
+        clip-path: inset(0 100% 0 0);
+        opacity: 0.76;
+        filter: saturate(0.9);
     }
 
     to {
-        max-width: 100%;
+        clip-path: inset(0 0 0 0);
         opacity: 1;
         filter: saturate(1);
     }

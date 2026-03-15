@@ -46,13 +46,15 @@
                             else
                             {
                                 <div class="agent-text-block @(item.IsHtmlTransitioning ? "html-transforming" : string.Empty)">
-                                    <div class="agent-msg-text @(item.IsStreaming ? "typing-active" : string.Empty) @(item.IsHtmlTransitioning ? "plain-underlay" : string.Empty)">@item.Text</div>
+                                    <div class="agent-transition-shell">
+                                        <div class="agent-msg-text @(item.IsStreaming ? "typing-active" : string.Empty) @(item.IsHtmlTransitioning ? "plain-underlay" : string.Empty)">@item.Text</div>
                                     @if (item.IsHtmlTransitioning && !string.IsNullOrWhiteSpace(item.HtmlText))
                                     {
-                                        <div class="agent-msg-html-overlay" @onanimationend="@(() => CompleteHtmlTransition(item))">
+                                        <div class="agent-msg-html-overlay">
                                             @((MarkupString)item.HtmlText)
                                         </div>
                                     }
+                                    </div>
                                     @if (item.ShowLoadingTail)
                                     {
                                         <div class="agent-loading-tail" aria-hidden="true">
@@ -204,6 +206,7 @@
                         if (!string.IsNullOrWhiteSpace(htmlReply))
                         {
                             OverlayState.BeginHtmlTransitionOnLastAgentMessage(htmlReply);
+                            _ = FinalizeHtmlTransitionAsync(htmlReply);
                             return InvokeAsync(StateHasChanged);
                         }
                     }
@@ -236,18 +239,19 @@
         return Task.CompletedTask;
     }
 
-    private void CompleteHtmlTransition(AgentChatOverlayState.ChatLine item)
+    private async Task FinalizeHtmlTransitionAsync(string htmlText)
     {
-        var last = OverlayState.GetLastMessage();
-        if (last is null || !ReferenceEquals(last, item))
+        await Task.Delay(1150);
+        await InvokeAsync(() =>
         {
-            return;
-        }
+            var last = OverlayState.GetLastMessage();
+            if (last is null || !last.IsHtmlTransitioning || !string.Equals(last.HtmlText, htmlText, StringComparison.Ordinal))
+            {
+                return;
+            }
 
-        if (!string.IsNullOrWhiteSpace(item.HtmlText))
-        {
-            OverlayState.SetLastAgentMessage(item.HtmlText, true);
-        }
+            OverlayState.SetLastAgentMessage(htmlText, true);
+        });
     }
 }
 
