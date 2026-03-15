@@ -1,10 +1,12 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
 using Amazon.BedrockAgentCore;
 using Amazon.BedrockAgentCore.Model;
+using Amazon.Runtime;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using PlaNEvent.Shared.Contracts;
@@ -20,7 +22,8 @@ public interface IAgentCoreChatService
 public sealed class AgentCoreChatService(
     IAmazonBedrockAgentCore bedrockClient,
     IOptions<AgentCoreOptions> options,
-    IHttpContextAccessor httpContextAccessor) : IAgentCoreChatService
+    IHttpContextAccessor httpContextAccessor,
+    IHttpClientFactory httpClientFactory) : IAgentCoreChatService
 {
     private readonly AgentCoreOptions optionsValue = options.Value;
 
@@ -106,29 +109,44 @@ public sealed class AgentCoreChatService(
 
         try
         {
-            var result = await InvokeAndExtractAsync(request.Message, sessionId, cancellationToken);
-            var reply = string.IsNullOrWhiteSpace(result.Reply) ? "No response from agent." : result.Reply;
+            var streamResult = await StreamFromRuntimeAsync(request.Message, sessionId, response, cancellationToken);
+            var reply = string.IsNullOrWhiteSpace(streamResult.Reply) ? "No response from agent." : streamResult.Reply;
             var htmlFormatPrompt = BuildHtmlFormatPrompt(reply);
-            var formatPass = await InvokeAndExtractAsync(htmlFormatPrompt, BuildFormattingSessionId(result.SessionId), cancellationToken);
+            var formatPass = await InvokeAndExtractAsync(htmlFormatPrompt, BuildFormattingSessionId(streamResult.SessionId), cancellationToken);
             var htmlReply = string.IsNullOrWhiteSpace(formatPass.Reply)
                 ? $"<p>{WebUtility.HtmlEncode(reply)}</p>"
                 : formatPass.Reply;
 
-            await WriteSseEventAsync(response, "session", new { sessionId = result.SessionId }, cancellationToken);
-            foreach (var chunk in ChunkTextForStream(reply))
-            {
-                await WriteSseEventAsync(response, "delta", new { sessionId = result.SessionId, delta = chunk }, cancellationToken);
-            }
-
-            await WriteSseEventAsync(response, "complete", new { sessionId = result.SessionId, reply, htmlReply }, cancellationToken);
+            await WriteSseEventAsync(response, "complete", new { sessionId = streamResult.SessionId, reply, htmlReply }, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            await WriteSseEventAsync(response, "error", new
+            try
             {
-                sessionId,
-                message = $"AgentCore call failed: {ex.Message}"
-            }, cancellationToken);
+                var result = await InvokeAndExtractAsync(request.Message, sessionId, cancellationToken);
+                var reply = string.IsNullOrWhiteSpace(result.Reply) ? "No response from agent." : result.Reply;
+                var htmlFormatPrompt = BuildHtmlFormatPrompt(reply);
+                var formatPass = await InvokeAndExtractAsync(htmlFormatPrompt, BuildFormattingSessionId(result.SessionId), cancellationToken);
+                var htmlReply = string.IsNullOrWhiteSpace(formatPass.Reply)
+                    ? $"<p>{WebUtility.HtmlEncode(reply)}</p>"
+                    : formatPass.Reply;
+
+                await WriteSseEventAsync(response, "session", new { sessionId = result.SessionId }, cancellationToken);
+                foreach (var chunk in ChunkTextForStream(reply))
+                {
+                    await WriteSseEventAsync(response, "delta", new { sessionId = result.SessionId, delta = chunk }, cancellationToken);
+                }
+
+                await WriteSseEventAsync(response, "complete", new { sessionId = result.SessionId, reply, htmlReply }, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                await WriteSseEventAsync(response, "error", new
+                {
+                    sessionId,
+                    message = $"AgentCore call failed: {ex.Message}"
+                }, cancellationToken);
+            }
         }
     }
 
@@ -258,6 +276,250 @@ Answer:
     private static string ExtractReply(string payload)
     {
         return ExtractReply(payload, 0);
+    }
+
+    private async Task<(string SessionId, string Reply)> StreamFromRuntimeAsync(
+        string prompt,
+        string sessionId,
+        HttpResponse downstreamResponse,
+        CancellationToken cancellationToken)
+    {
+        var payloadJson = BuildPayloadJson(prompt, sessionId, stream: true);
+        var accountId = ExtractAccountId(optionsValue.AgentRuntimeArn);
+        var endpoint = $"https://bedrock-agentcore.{optionsValue.Region}.amazonaws.com";
+        var resourcePath = $"/runtimes/{Uri.EscapeDataString(optionsValue.AgentRuntimeArn)}/invocations";
+        var queryParameters = new SortedDictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["accountId"] = accountId
+        };
+
+        if (!string.IsNullOrWhiteSpace(optionsValue.Qualifier))
+        {
+            queryParameters["qualifier"] = optionsValue.Qualifier;
+        }
+
+        var requestUri = BuildRequestUri(endpoint, resourcePath, queryParameters);
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, requestUri)
+        {
+            Content = new StringContent(payloadJson, Encoding.UTF8, "application/json")
+        };
+
+        httpRequest.Headers.Accept.Clear();
+        httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        httpRequest.Headers.TryAddWithoutValidation("X-Amzn-Bedrock-AgentCore-Runtime-Session-Id", sessionId);
+
+        await SignRequestAsync(httpRequest, payloadJson, cancellationToken);
+
+        using var client = httpClientFactory.CreateClient();
+        using var runtimeResponse = await client.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+        if (!runtimeResponse.IsSuccessStatusCode)
+        {
+            var errorBody = await runtimeResponse.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException($"Runtime returned {(int)runtimeResponse.StatusCode}: {errorBody}");
+        }
+
+        var actualSessionId = GetRuntimeSessionId(runtimeResponse) ?? sessionId;
+        await WriteSseEventAsync(downstreamResponse, "session", new { sessionId = actualSessionId }, cancellationToken);
+
+        await using var stream = await runtimeResponse.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+
+        var sseBuffer = new StringBuilder();
+        var replyBuffer = new StringBuilder();
+
+        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken) ?? string.Empty;
+            if (string.IsNullOrEmpty(line))
+            {
+                if (sseBuffer.Length == 0)
+                {
+                    continue;
+                }
+
+                var payload = sseBuffer.ToString();
+                sseBuffer.Clear();
+
+                var streamedEvent = ParseRuntimeStreamEvent(payload, actualSessionId);
+                switch (streamedEvent.Kind)
+                {
+                    case "delta":
+                        if (!string.IsNullOrWhiteSpace(streamedEvent.Delta))
+                        {
+                            replyBuffer.Append(streamedEvent.Delta);
+                            await WriteSseEventAsync(downstreamResponse, "delta", new
+                            {
+                                sessionId = actualSessionId,
+                                delta = streamedEvent.Delta
+                            }, cancellationToken);
+                        }
+
+                        break;
+                    case "complete":
+                        if (!string.IsNullOrWhiteSpace(streamedEvent.Reply))
+                        {
+                            replyBuffer.Clear();
+                            replyBuffer.Append(streamedEvent.Reply);
+                        }
+
+                        return (actualSessionId, replyBuffer.ToString().Trim());
+                    case "error":
+                        throw new InvalidOperationException(streamedEvent.Message ?? "Runtime stream failed.");
+                }
+
+                continue;
+            }
+
+            if (line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                sseBuffer.AppendLine(line["data:".Length..].Trim());
+            }
+        }
+
+        return (actualSessionId, replyBuffer.ToString().Trim());
+    }
+
+    private async Task SignRequestAsync(HttpRequestMessage request, string payloadJson, CancellationToken cancellationToken)
+    {
+        var credentials = await FallbackCredentialsFactory.GetCredentials(false).GetCredentialsAsync().WaitAsync(cancellationToken);
+        var immutableCredentials = credentials.UseToken
+            ? new ImmutableCredentials(credentials.AccessKey, credentials.SecretKey, credentials.Token)
+            : new ImmutableCredentials(credentials.AccessKey, credentials.SecretKey, null);
+
+        var now = DateTime.UtcNow;
+        var amzDate = now.ToString("yyyyMMdd'T'HHmmss'Z'");
+        var dateStamp = now.ToString("yyyyMMdd");
+        var payloadHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payloadJson))).ToLowerInvariant();
+
+        request.Headers.Host = request.RequestUri!.Host;
+        request.Headers.Remove("x-amz-date");
+        request.Headers.TryAddWithoutValidation("x-amz-date", amzDate);
+        request.Headers.Remove("x-amz-content-sha256");
+        request.Headers.TryAddWithoutValidation("x-amz-content-sha256", payloadHash);
+
+        if (immutableCredentials.UseToken)
+        {
+            request.Headers.Remove("x-amz-security-token");
+            request.Headers.TryAddWithoutValidation("x-amz-security-token", immutableCredentials.Token);
+        }
+
+        var canonicalUri = request.RequestUri.AbsolutePath;
+        var canonicalQueryString = string.Join("&", request.RequestUri.Query.TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .OrderBy(item => item, StringComparer.Ordinal));
+
+        var headersToSign = GetHeadersToSign(request);
+        var canonicalHeaders = string.Join(string.Empty, headersToSign
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => $"{pair.Key}:{NormalizeHeaderValue(pair.Value)}\n"));
+        var signedHeaders = string.Join(';', headersToSign
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => pair.Key));
+
+        var canonicalRequest = string.Join("\n",
+        [
+            request.Method.Method,
+            canonicalUri,
+            canonicalQueryString,
+            canonicalHeaders,
+            signedHeaders,
+            payloadHash
+        ]);
+
+        var credentialScope = $"{dateStamp}/{optionsValue.Region}/bedrock-agentcore/aws4_request";
+        var stringToSign = string.Join("\n",
+        [
+            "AWS4-HMAC-SHA256",
+            amzDate,
+            credentialScope,
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalRequest))).ToLowerInvariant()
+        ]);
+
+        var signingKey = DeriveSigningKey(immutableCredentials.SecretKey, dateStamp, optionsValue.Region, "bedrock-agentcore");
+        var signature = Convert.ToHexString(HmacSha256(signingKey, stringToSign)).ToLowerInvariant();
+
+        var authorization = $"AWS4-HMAC-SHA256 Credential={immutableCredentials.AccessKey}/{credentialScope}, SignedHeaders={signedHeaders}, Signature={signature}";
+        request.Headers.Remove("Authorization");
+        request.Headers.TryAddWithoutValidation("Authorization", authorization);
+    }
+
+    private static IDictionary<string, string> GetHeadersToSign(HttpRequestMessage request)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var header in request.Headers)
+        {
+            headers[header.Key.ToLowerInvariant()] = string.Join(",", header.Value);
+        }
+
+        if (request.Content is not null)
+        {
+            foreach (var header in request.Content.Headers)
+            {
+                headers[header.Key.ToLowerInvariant()] = string.Join(",", header.Value);
+            }
+        }
+
+        return headers;
+    }
+
+    private static string NormalizeHeaderValue(string value)
+    {
+        return Regex.Replace(value.Trim(), @"\s+", " ");
+    }
+
+    private static byte[] HmacSha256(byte[] key, string data)
+    {
+        using var hmac = new HMACSHA256(key);
+        return hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
+    }
+
+    private static byte[] DeriveSigningKey(string secretKey, string dateStamp, string region, string service)
+    {
+        var kSecret = Encoding.UTF8.GetBytes($"AWS4{secretKey}");
+        var kDate = HmacSha256(kSecret, dateStamp);
+        var kRegion = HmacSha256(kDate, region);
+        var kService = HmacSha256(kRegion, service);
+        return HmacSha256(kService, "aws4_request");
+    }
+
+    private static string BuildRequestUri(string endpoint, string resourcePath, IReadOnlyDictionary<string, string> queryParameters)
+    {
+        var query = string.Join("&", queryParameters.Select(pair =>
+            $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
+        return $"{endpoint}{resourcePath}?{query}";
+    }
+
+    private static string ExtractAccountId(string runtimeArn)
+    {
+        var parts = runtimeArn.Split(':', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 4 ? parts[4] : throw new InvalidOperationException("Unable to extract AWS account ID from AgentCore runtime ARN.");
+    }
+
+    private static string? GetRuntimeSessionId(HttpResponseMessage response)
+    {
+        return response.Headers.TryGetValues("X-Amzn-Bedrock-AgentCore-Runtime-Session-Id", out var values)
+            ? values.FirstOrDefault()
+            : null;
+    }
+
+    private static (string Kind, string? Delta, string? Reply, string? Message) ParseRuntimeStreamEvent(string payload, string sessionId)
+    {
+        using var doc = JsonDocument.Parse(payload);
+        var root = doc.RootElement;
+        var kind = root.TryGetProperty("type", out var typeElement) && typeElement.ValueKind == JsonValueKind.String
+            ? typeElement.GetString() ?? string.Empty
+            : string.Empty;
+
+        return kind switch
+        {
+            "session" => ("session", null, null, null),
+            "delta" => ("delta", root.TryGetProperty("delta", out var delta) ? delta.GetString() : null, null, null),
+            "complete" => ("complete", null, root.TryGetProperty("reply", out var reply) ? reply.GetString() : null, null),
+            "error" => ("error", null, null, root.TryGetProperty("message", out var message) ? message.GetString() : "Runtime stream failed."),
+            _ => ("delta", ExtractReply(payload), null, null)
+        };
     }
 
     private static string ExtractReply(string payload, int depth)
