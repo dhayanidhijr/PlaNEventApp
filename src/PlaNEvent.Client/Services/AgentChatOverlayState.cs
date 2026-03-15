@@ -52,7 +52,9 @@ public sealed class AgentChatOverlayState
             IsHtml = false,
             IsThinking = false,
             IsStreaming = true,
-            ShowLoadingTail = true
+            ShowLoadingTail = true,
+            HtmlText = null,
+            IsHtmlTransitioning = false
         };
         Changed?.Invoke();
     }
@@ -65,6 +67,36 @@ public sealed class AgentChatOverlayState
     public void SetLastAgentThinking(string text)
     {
         SetLastAgentMessage(text, false, true, false, false);
+    }
+
+    public void BeginHtmlTransitionOnLastAgentMessage(string htmlText)
+    {
+        if (Messages.Count == 0)
+        {
+            Messages.Add(new ChatLine(false, string.Empty, false, false, false, false, htmlText, true));
+        }
+        else
+        {
+            var last = Messages[^1];
+            if (last.IsUser)
+            {
+                Messages.Add(new ChatLine(false, string.Empty, false, false, false, false, htmlText, true));
+            }
+            else
+            {
+                Messages[^1] = last with
+                {
+                    IsHtml = false,
+                    IsThinking = false,
+                    IsStreaming = false,
+                    ShowLoadingTail = true,
+                    HtmlText = htmlText,
+                    IsHtmlTransitioning = true
+                };
+            }
+        }
+
+        Changed?.Invoke();
     }
 
     public void SetLastAgentMessage(string text, bool isHtml, bool isThinking, bool isStreaming, bool showLoadingTail)
@@ -88,7 +120,9 @@ public sealed class AgentChatOverlayState
                     IsHtml = isHtml,
                     IsThinking = isThinking,
                     IsStreaming = isStreaming,
-                    ShowLoadingTail = showLoadingTail
+                    ShowLoadingTail = showLoadingTail,
+                    HtmlText = isHtml ? null : last.HtmlText,
+                    IsHtmlTransitioning = false
                 };
             }
         }
@@ -114,5 +148,7 @@ public sealed class AgentChatOverlayState
         bool IsHtml,
         bool IsThinking = false,
         bool IsStreaming = false,
-        bool ShowLoadingTail = false);
+        bool ShowLoadingTail = false,
+        string? HtmlText = null,
+        bool IsHtmlTransitioning = false);
 }

@@ -26,7 +26,7 @@
                 {
                     @foreach (var item in messages)
                     {
-                        <div class="agent-msg @(item.IsUser ? "user" : "agent") @(item.IsThinking ? "is-thinking" : string.Empty) @(item.IsStreaming ? "is-streaming" : string.Empty)">
+                        <div class="agent-msg @(item.IsUser ? "user" : "agent") @(item.IsThinking ? "is-thinking" : string.Empty) @(item.IsStreaming ? "is-streaming" : string.Empty) @(item.IsHtmlTransitioning ? "is-html-transitioning" : string.Empty)">
                             <div class="agent-msg-role">@(item.IsUser ? "You" : "Sage Response")</div>
                             @if (item.IsHtml)
                             {
@@ -45,8 +45,14 @@
                             }
                             else
                             {
-                                <div class="agent-text-block">
-                                    <div class="agent-msg-text @(item.IsStreaming ? "typing-active" : string.Empty)">@item.Text</div>
+                                <div class="agent-text-block @(item.IsHtmlTransitioning ? "html-transforming" : string.Empty)">
+                                    <div class="agent-msg-text @(item.IsStreaming ? "typing-active" : string.Empty) @(item.IsHtmlTransitioning ? "plain-underlay" : string.Empty)">@item.Text</div>
+                                    @if (item.IsHtmlTransitioning && !string.IsNullOrWhiteSpace(item.HtmlText))
+                                    {
+                                        <div class="agent-msg-html-overlay" @onanimationend="@(() => CompleteHtmlTransition(item))">
+                                            @((MarkupString)item.HtmlText)
+                                        </div>
+                                    }
                                     @if (item.ShowLoadingTail)
                                     {
                                         <div class="agent-loading-tail" aria-hidden="true">
@@ -197,7 +203,7 @@
                         var htmlReply = htmlReplyElement.GetString() ?? string.Empty;
                         if (!string.IsNullOrWhiteSpace(htmlReply))
                         {
-                            OverlayState.SetLastAgentMessage(htmlReply, true);
+                            OverlayState.BeginHtmlTransitionOnLastAgentMessage(htmlReply);
                             return InvokeAsync(StateHasChanged);
                         }
                     }
@@ -228,6 +234,20 @@
         }
 
         return Task.CompletedTask;
+    }
+
+    private void CompleteHtmlTransition(AgentChatOverlayState.ChatLine item)
+    {
+        var last = OverlayState.GetLastMessage();
+        if (last is null || !ReferenceEquals(last, item))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.HtmlText))
+        {
+            OverlayState.SetLastAgentMessage(item.HtmlText, true);
+        }
     }
 }
 

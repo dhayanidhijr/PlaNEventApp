@@ -48,12 +48,50 @@
     align-items: flex-end;
     gap: 0.55rem;
     flex-wrap: wrap;
+    position: relative;
 }
 
 .agent-msg-text {
     white-space: pre-wrap;
     word-break: break-word;
     line-height: 1.65;
+}
+
+.agent-text-block.html-transforming {
+    display: block;
+    min-width: min(100%, 18rem);
+}
+
+.agent-msg-text.plain-underlay {
+    color: #5c6c85;
+}
+
+.agent-msg-html-overlay {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    color: inherit;
+    white-space: normal;
+    animation: sageHtmlReveal 1.15s steps(24, end) forwards;
+    pointer-events: none;
+}
+
+.agent-msg-html-overlay :global(p),
+.agent-msg-html-overlay :global(ul),
+.agent-msg-html-overlay :global(ol),
+.agent-msg-html-overlay :global(pre),
+.agent-msg-html-overlay :global(blockquote),
+.agent-msg-html-overlay :global(h1),
+.agent-msg-html-overlay :global(h2),
+.agent-msg-html-overlay :global(h3),
+.agent-msg-html-overlay :global(h4) {
+    margin-bottom: 0.55rem;
+}
+
+.agent-msg-html-overlay :global(*:last-child) {
+    margin-bottom: 0;
 }
 
 .agent-msg-text.typing-active::after {
@@ -107,5 +145,19 @@
     to {
         opacity: 1;
         transform: translateY(0);
+    }
+}
+
+@keyframes sageHtmlReveal {
+    from {
+        max-width: 0;
+        opacity: 0.85;
+        filter: saturate(0.85);
+    }
+
+    to {
+        max-width: 100%;
+        opacity: 1;
+        filter: saturate(1);
     }
 }
