@@ -1,12 +1,10 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
 using Amazon.BedrockAgentCore;
 using Amazon.BedrockAgentCore.Model;
-using Amazon.Runtime;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using PlaNEvent.Shared.Contracts;
@@ -22,8 +20,7 @@ public interface IAgentCoreChatService
 public sealed class AgentCoreChatService(
     IAmazonBedrockAgentCore bedrockClient,
     IOptions<AgentCoreOptions> options,
-    IHttpContextAccessor httpContextAccessor,
-    IHttpClientFactory httpClientFactory) : IAgentCoreChatService
+    IHttpContextAccessor httpContextAccessor) : IAgentCoreChatService
 {
     private readonly AgentCoreOptions optionsValue = options.Value;
 
@@ -285,40 +282,28 @@ Answer:
         CancellationToken cancellationToken)
     {
         var payloadJson = BuildPayloadJson(prompt, sessionId, stream: true);
-        var endpoint = $"https://bedrock-agentcore.{optionsValue.Region}.amazonaws.com";
-        var resourcePath = $"/runtimes/{Uri.EscapeDataString(optionsValue.AgentRuntimeArn)}/invocations";
-        var queryParameters = new SortedDictionary<string, string>(StringComparer.Ordinal);
-
-        if (!string.IsNullOrWhiteSpace(optionsValue.Qualifier))
+        using var payloadStream = new MemoryStream(Encoding.UTF8.GetBytes(payloadJson));
+        var invokeRequest = new InvokeAgentRuntimeRequest
         {
-            queryParameters["qualifier"] = optionsValue.Qualifier;
-        }
-
-        var requestUri = BuildRequestUri(endpoint, resourcePath, queryParameters);
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, requestUri)
-        {
-            Content = new StringContent(payloadJson, Encoding.UTF8, "application/json")
+            AgentRuntimeArn = optionsValue.AgentRuntimeArn,
+            Qualifier = optionsValue.Qualifier,
+            ContentType = "application/json",
+            Accept = "text/event-stream",
+            RuntimeSessionId = sessionId,
+            Payload = payloadStream
         };
 
-        httpRequest.Headers.Accept.Clear();
-        httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
-        httpRequest.Headers.TryAddWithoutValidation("X-Amzn-Bedrock-AgentCore-Runtime-Session-Id", sessionId);
+        var runtimeResponse = await bedrockClient.InvokeAgentRuntimeAsync(invokeRequest, cancellationToken);
 
-        await SignRequestAsync(httpRequest, payloadJson, cancellationToken);
-
-        using var client = httpClientFactory.CreateClient();
-        using var runtimeResponse = await client.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-
-        if (!runtimeResponse.IsSuccessStatusCode)
-        {
-            var errorBody = await runtimeResponse.Content.ReadAsStringAsync(cancellationToken);
-            throw new InvalidOperationException($"Runtime returned {(int)runtimeResponse.StatusCode}: {errorBody}");
-        }
-
-        var actualSessionId = GetRuntimeSessionId(runtimeResponse) ?? sessionId;
+        var actualSessionId = runtimeResponse.RuntimeSessionId ?? sessionId;
         await WriteSseEventAsync(downstreamResponse, "session", new { sessionId = actualSessionId }, cancellationToken);
 
-        await using var stream = await runtimeResponse.Content.ReadAsStreamAsync(cancellationToken);
+        if (runtimeResponse.Response is null)
+        {
+            throw new InvalidOperationException("Runtime stream response was empty.");
+        }
+
+        await using var stream = runtimeResponse.Response;
         using var reader = new StreamReader(stream);
 
         var sseBuffer = new StringBuilder();
@@ -374,124 +359,6 @@ Answer:
         }
 
         return (actualSessionId, replyBuffer.ToString().Trim());
-    }
-
-    private async Task SignRequestAsync(HttpRequestMessage request, string payloadJson, CancellationToken cancellationToken)
-    {
-        var credentials = await FallbackCredentialsFactory.GetCredentials(false).GetCredentialsAsync().WaitAsync(cancellationToken);
-        var immutableCredentials = credentials.UseToken
-            ? new ImmutableCredentials(credentials.AccessKey, credentials.SecretKey, credentials.Token)
-            : new ImmutableCredentials(credentials.AccessKey, credentials.SecretKey, null);
-
-        var now = DateTime.UtcNow;
-        var amzDate = now.ToString("yyyyMMdd'T'HHmmss'Z'");
-        var dateStamp = now.ToString("yyyyMMdd");
-        var payloadHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payloadJson))).ToLowerInvariant();
-
-        request.Headers.Host = request.RequestUri!.Host;
-        request.Headers.Remove("x-amz-date");
-        request.Headers.TryAddWithoutValidation("x-amz-date", amzDate);
-        request.Headers.Remove("x-amz-content-sha256");
-        request.Headers.TryAddWithoutValidation("x-amz-content-sha256", payloadHash);
-
-        if (immutableCredentials.UseToken)
-        {
-            request.Headers.Remove("x-amz-security-token");
-            request.Headers.TryAddWithoutValidation("x-amz-security-token", immutableCredentials.Token);
-        }
-
-        var canonicalUri = request.RequestUri.AbsolutePath;
-        var canonicalQueryString = string.Join("&", request.RequestUri.Query.TrimStart('?')
-            .Split('&', StringSplitOptions.RemoveEmptyEntries)
-            .OrderBy(item => item, StringComparer.Ordinal));
-
-        var headersToSign = GetHeadersToSign(request);
-        var canonicalHeaders = string.Join(string.Empty, headersToSign
-            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
-            .Select(pair => $"{pair.Key}:{NormalizeHeaderValue(pair.Value)}\n"));
-        var signedHeaders = string.Join(';', headersToSign
-            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
-            .Select(pair => pair.Key));
-
-        var canonicalRequest = string.Join("\n",
-        [
-            request.Method.Method,
-            canonicalUri,
-            canonicalQueryString,
-            canonicalHeaders,
-            signedHeaders,
-            payloadHash
-        ]);
-
-        var credentialScope = $"{dateStamp}/{optionsValue.Region}/bedrock-agentcore/aws4_request";
-        var stringToSign = string.Join("\n",
-        [
-            "AWS4-HMAC-SHA256",
-            amzDate,
-            credentialScope,
-            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalRequest))).ToLowerInvariant()
-        ]);
-
-        var signingKey = DeriveSigningKey(immutableCredentials.SecretKey, dateStamp, optionsValue.Region, "bedrock-agentcore");
-        var signature = Convert.ToHexString(HmacSha256(signingKey, stringToSign)).ToLowerInvariant();
-
-        var authorization = $"AWS4-HMAC-SHA256 Credential={immutableCredentials.AccessKey}/{credentialScope}, SignedHeaders={signedHeaders}, Signature={signature}";
-        request.Headers.Remove("Authorization");
-        request.Headers.TryAddWithoutValidation("Authorization", authorization);
-    }
-
-    private static IDictionary<string, string> GetHeadersToSign(HttpRequestMessage request)
-    {
-        var headers = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        foreach (var header in request.Headers)
-        {
-            headers[header.Key.ToLowerInvariant()] = string.Join(",", header.Value);
-        }
-
-        if (request.Content is not null)
-        {
-            foreach (var header in request.Content.Headers)
-            {
-                headers[header.Key.ToLowerInvariant()] = string.Join(",", header.Value);
-            }
-        }
-
-        return headers;
-    }
-
-    private static string NormalizeHeaderValue(string value)
-    {
-        return Regex.Replace(value.Trim(), @"\s+", " ");
-    }
-
-    private static byte[] HmacSha256(byte[] key, string data)
-    {
-        using var hmac = new HMACSHA256(key);
-        return hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
-    }
-
-    private static byte[] DeriveSigningKey(string secretKey, string dateStamp, string region, string service)
-    {
-        var kSecret = Encoding.UTF8.GetBytes($"AWS4{secretKey}");
-        var kDate = HmacSha256(kSecret, dateStamp);
-        var kRegion = HmacSha256(kDate, region);
-        var kService = HmacSha256(kRegion, service);
-        return HmacSha256(kService, "aws4_request");
-    }
-
-    private static string BuildRequestUri(string endpoint, string resourcePath, IReadOnlyDictionary<string, string> queryParameters)
-    {
-        var query = string.Join("&", queryParameters.Select(pair =>
-            $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
-        return $"{endpoint}{resourcePath}?{query}";
-    }
-
-    private static string? GetRuntimeSessionId(HttpResponseMessage response)
-    {
-        return response.Headers.TryGetValues("X-Amzn-Bedrock-AgentCore-Runtime-Session-Id", out var values)
-            ? values.FirstOrDefault()
-            : null;
     }
 
     private static (string Kind, string? Delta, string? Reply, string? Message) ParseRuntimeStreamEvent(string payload, string sessionId)
