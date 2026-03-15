@@ -97,7 +97,11 @@ async def stream_agent_reply(agent: Agent, prompt_with_context: str, session_id:
             if not reply_text:
                 reply_text = strip_thinking(final_text)
             if not reply_text:
-                reply_text = "No response from agent."
+                reply_text = await collect_agent_reply(agent, prompt_with_context)
+
+            if not chunks and reply_text.strip():
+                for chunk in chunk_text_for_stream(reply_text):
+                    yield {"type": "delta", "delta": chunk, "sessionId": session_id}
 
             update_history(session_id, prompt, reply_text)
             yield {"type": "complete", "sessionId": session_id, "reply": reply_text}
@@ -217,6 +221,33 @@ def extract_stream_text(event: dict[str, Any]) -> str:
             return delta_text
 
     return ""
+
+
+def chunk_text_for_stream(text: str) -> list[str]:
+    normalized = strip_thinking(text)
+    if not normalized:
+        return []
+
+    sentence_chunks = [chunk for chunk in re.split(r"(?<=[.!?])\s+", normalized) if chunk.strip()]
+    if len(sentence_chunks) > 1:
+        return [f"{chunk} " for chunk in sentence_chunks[:-1]] + [sentence_chunks[-1]]
+
+    word_chunks = normalized.split()
+    if len(word_chunks) <= 6:
+        return [normalized]
+
+    chunks: list[str] = []
+    current: list[str] = []
+    for word in word_chunks:
+        current.append(word)
+        if len(current) >= 4:
+            chunks.append(" ".join(current) + " ")
+            current = []
+
+    if current:
+        chunks.append(" ".join(current))
+
+    return chunks
 
 
 def extract_content_text(payload: dict[str, Any]) -> str:
