@@ -37,16 +37,17 @@ async def invoke(payload: dict[str, Any]) -> Any:
     region_name = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "us-east-1"
     model_id = os.getenv("SAGE_MODEL_ID", DEFAULT_MODEL_ID)
 
-    tools = build_api_tools(api_base_url, swagger_url, access_token)
-    agent = Agent(
-        model=BedrockModel(model_id=model_id, region_name=region_name, temperature=0.1),
-        tools=tools,
-        system_prompt=build_system_prompt(api_base_url, swagger_url, has_token=bool(access_token)),
-    )
+    agent = create_agent(api_base_url, swagger_url, access_token, region_name, model_id)
 
     prompt_with_context = build_prompt_with_history(prompt, session_id)
     if bool(payload.get("stream")):
-        return stream_agent_reply(agent, prompt_with_context, session_id, prompt)
+        return stream_agent_reply(
+            agent,
+            prompt_with_context,
+            session_id,
+            prompt,
+            lambda: create_agent(api_base_url, swagger_url, access_token, region_name, model_id),
+        )
 
     response_text = await collect_agent_reply(agent, prompt_with_context)
     update_history(session_id, prompt, response_text)
@@ -74,7 +75,7 @@ async def collect_agent_reply(agent: Agent, prompt_with_context: str) -> str:
     return "No response from agent."
 
 
-async def stream_agent_reply(agent: Agent, prompt_with_context: str, session_id: str, prompt: str):
+async def stream_agent_reply(agent: Agent, prompt_with_context: str, session_id: str, prompt: str, fallback_agent_factory):
     async def event_generator():
         chunks: list[str] = []
         final_text = ""
@@ -97,7 +98,7 @@ async def stream_agent_reply(agent: Agent, prompt_with_context: str, session_id:
             if not reply_text:
                 reply_text = strip_thinking(final_text)
             if not reply_text:
-                reply_text = await collect_agent_reply(agent, prompt_with_context)
+                reply_text = await collect_agent_reply(fallback_agent_factory(), prompt_with_context)
 
             if not chunks and reply_text.strip():
                 for chunk in chunk_text_for_stream(reply_text):
@@ -122,6 +123,15 @@ def build_result_payload(response_text: str) -> dict[str, Any]:
             ],
         }
     }
+
+
+def create_agent(api_base_url: str, swagger_url: str, access_token: str | None, region_name: str, model_id: str) -> Agent:
+    tools = build_api_tools(api_base_url, swagger_url, access_token)
+    return Agent(
+        model=BedrockModel(model_id=model_id, region_name=region_name, temperature=0.1),
+        tools=tools,
+        system_prompt=build_system_prompt(api_base_url, swagger_url, has_token=bool(access_token)),
+    )
 
 
 def build_prompt_with_history(prompt: str, session_id: str) -> str:
