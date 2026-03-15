@@ -26,6 +26,52 @@ public sealed class AgentChatOverlayState
         Changed?.Invoke();
     }
 
+    public void BeginAgentMessage(bool isHtml = false)
+    {
+        Messages.Add(new ChatLine(false, string.Empty, isHtml));
+        Changed?.Invoke();
+    }
+
+    public void AppendToLastAgentMessage(string text)
+    {
+        if (Messages.Count == 0)
+        {
+            BeginAgentMessage();
+        }
+
+        var last = Messages[^1];
+        if (last.IsUser)
+        {
+            BeginAgentMessage();
+            last = Messages[^1];
+        }
+
+        Messages[^1] = last with { Text = $"{last.Text}{text}", IsHtml = false };
+        Changed?.Invoke();
+    }
+
+    public void SetLastAgentMessage(string text, bool isHtml = false)
+    {
+        if (Messages.Count == 0)
+        {
+            Messages.Add(new ChatLine(false, text, isHtml));
+        }
+        else
+        {
+            var last = Messages[^1];
+            if (last.IsUser)
+            {
+                Messages.Add(new ChatLine(false, text, isHtml));
+            }
+            else
+            {
+                Messages[^1] = last with { Text = text, IsHtml = isHtml };
+            }
+        }
+
+        Changed?.Invoke();
+    }
+
     public void ClearConversation()
     {
         SessionId = null;

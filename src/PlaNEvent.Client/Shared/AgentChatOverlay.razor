@@ -1,6 +1,9 @@
 @implements IDisposable
+@using System.Text.Json
 @inject ApiClient Api
 @inject AgentChatOverlayState OverlayState
+@inject IJSRuntime Js
+@inject TokenAuthenticationStateProvider AuthStateProvider
 
 @if (OverlayState.IsOpen)
 {
@@ -51,6 +54,7 @@
 @code {
     private string prompt = string.Empty;
     private bool isSending;
+    private DotNetObjectReference<AgentChatOverlay>? streamReference;
 
     protected override void OnInitialized()
     {
@@ -81,24 +85,22 @@
         var text = prompt.Trim();
         prompt = string.Empty;
         OverlayState.AddMessage(new AgentChatOverlayState.ChatLine(true, text, false));
+        OverlayState.BeginAgentMessage();
         isSending = true;
 
         try
         {
-            var response = await Api.AgentChatAsync(new AgentChatRequest
+            streamReference ??= DotNetObjectReference.Create(this);
+            var token = await AuthStateProvider.GetTokenAsync();
+            await Js.InvokeVoidAsync("planeventAgentChat.stream", "api/agent/chat/stream", token, new AgentChatRequest
             {
                 Message = text,
                 SessionId = OverlayState.SessionId
-            });
-
-            OverlayState.SessionId = response?.SessionId ?? OverlayState.SessionId;
-            var replyText = response?.Reply ?? "No response from agent.";
-            var replyHtml = response?.HtmlReply;
-            OverlayState.AddMessage(new AgentChatOverlayState.ChatLine(false, string.IsNullOrWhiteSpace(replyHtml) ? replyText : replyHtml!, !string.IsNullOrWhiteSpace(replyHtml)));
+            }, streamReference);
         }
         catch (Exception ex)
         {
-            OverlayState.AddMessage(new AgentChatOverlayState.ChatLine(false, $"Error: {ex.Message}", false));
+            OverlayState.SetLastAgentMessage($"Error: {ex.Message}", false);
         }
         finally
         {
@@ -116,7 +118,74 @@
 
     public void Dispose()
     {
+        streamReference?.Dispose();
         OverlayState.Changed -= OnOverlayChanged;
+    }
+
+    [JSInvokable]
+    public Task OnAgentStreamEvent(string eventName, string payloadJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(payloadJson);
+            var root = doc.RootElement;
+
+            if (string.Equals(eventName, "session", StringComparison.OrdinalIgnoreCase))
+            {
+                if (root.TryGetProperty("sessionId", out var sessionElement) && sessionElement.ValueKind == JsonValueKind.String)
+                {
+                    OverlayState.SessionId = sessionElement.GetString();
+                }
+
+                return InvokeAsync(StateHasChanged);
+            }
+
+            if (string.Equals(eventName, "delta", StringComparison.OrdinalIgnoreCase))
+            {
+                if (root.TryGetProperty("delta", out var deltaElement) && deltaElement.ValueKind == JsonValueKind.String)
+                {
+                    OverlayState.AppendToLastAgentMessage(deltaElement.GetString() ?? string.Empty);
+                }
+
+                return InvokeAsync(StateHasChanged);
+            }
+
+            if (string.Equals(eventName, "complete", StringComparison.OrdinalIgnoreCase))
+            {
+                if (root.TryGetProperty("sessionId", out var completeSession) && completeSession.ValueKind == JsonValueKind.String)
+                {
+                    OverlayState.SessionId = completeSession.GetString();
+                }
+
+                if (root.TryGetProperty("reply", out var replyElement) && replyElement.ValueKind == JsonValueKind.String)
+                {
+                    var reply = replyElement.GetString() ?? string.Empty;
+                    var hasVisibleText = messages.Count > 0 && !string.IsNullOrWhiteSpace(messages[^1].Text);
+                    if (!hasVisibleText)
+                    {
+                        OverlayState.SetLastAgentMessage(reply, false);
+                    }
+                }
+
+                return InvokeAsync(StateHasChanged);
+            }
+
+            if (string.Equals(eventName, "error", StringComparison.OrdinalIgnoreCase))
+            {
+                var message = root.TryGetProperty("message", out var messageElement) && messageElement.ValueKind == JsonValueKind.String
+                    ? messageElement.GetString() ?? "Streaming error."
+                    : "Streaming error.";
+
+                OverlayState.SetLastAgentMessage($"Error: {message}", false);
+                return InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex)
+        {
+            OverlayState.SetLastAgentMessage($"Error: {ex.Message}", false);
+        }
+
+        return Task.CompletedTask;
     }
 }
 

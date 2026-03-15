@@ -14,6 +14,7 @@ namespace PlaNEvent.Api.Services;
 public interface IAgentCoreChatService
 {
     Task<AgentChatResponse> ChatAsync(AgentChatRequest request, CancellationToken cancellationToken);
+    Task StreamChatAsync(AgentChatRequest request, HttpResponse response, CancellationToken cancellationToken);
 }
 
 public sealed class AgentCoreChatService(
@@ -74,27 +75,52 @@ public sealed class AgentCoreChatService(
         }
     }
 
+    public async Task StreamChatAsync(AgentChatRequest request, HttpResponse response, CancellationToken cancellationToken)
+    {
+        var sessionId = NormalizeSessionId(request.SessionId);
+
+        response.StatusCode = StatusCodes.Status200OK;
+        response.ContentType = "text/event-stream";
+        response.Headers.CacheControl = "no-cache";
+        response.Headers.Append("X-Accel-Buffering", "no");
+
+        if (string.IsNullOrWhiteSpace(request.Message))
+        {
+            await WriteSseEventAsync(response, "error", new
+            {
+                sessionId,
+                message = "Please provide a message."
+            }, cancellationToken);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(optionsValue.AgentRuntimeArn))
+        {
+            await WriteSseEventAsync(response, "error", new
+            {
+                sessionId,
+                message = "AgentCore runtime ARN is not configured. Set AgentCore:AgentRuntimeArn in API settings."
+            }, cancellationToken);
+            return;
+        }
+
+        try
+        {
+            await InvokeAndStreamAsync(request.Message, sessionId, response, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await WriteSseEventAsync(response, "error", new
+            {
+                sessionId,
+                message = $"AgentCore call failed: {ex.Message}"
+            }, cancellationToken);
+        }
+    }
+
     private async Task<(string SessionId, string Reply)> InvokeAndExtractAsync(string prompt, string sessionId, CancellationToken cancellationToken)
     {
-        var bearerToken = GetForwardedAccessToken();
-        var payloadJson = JsonSerializer.Serialize(new
-        {
-            sessionId,
-            prompt,
-            message = prompt,
-            inputText = prompt,
-            accessToken = bearerToken,
-            apiBaseUrl = optionsValue.ApiBaseUrl,
-            swaggerUrl = optionsValue.SwaggerUrl,
-            userContext = new
-            {
-                email = httpContextAccessor.HttpContext?.User?.Identity?.Name,
-                roles = httpContextAccessor.HttpContext?.User?.Claims
-                    .Where(claim => claim.Type.EndsWith("/role", StringComparison.OrdinalIgnoreCase) || claim.Type == "role")
-                    .Select(claim => claim.Value)
-                    .ToArray() ?? Array.Empty<string>()
-            }
-        });
+        var payloadJson = BuildPayloadJson(prompt, sessionId, stream: false);
 
         using var payloadStream = new MemoryStream(Encoding.UTF8.GetBytes(payloadJson));
 
@@ -112,6 +138,120 @@ public sealed class AgentCoreChatService(
         var responseText = await ReadResponseAsync(response);
 
         return (response.RuntimeSessionId ?? sessionId, ExtractReply(responseText));
+    }
+
+    private async Task InvokeAndStreamAsync(string prompt, string sessionId, HttpResponse downstreamResponse, CancellationToken cancellationToken)
+    {
+        var payloadJson = BuildPayloadJson(prompt, sessionId, stream: true);
+        using var payloadStream = new MemoryStream(Encoding.UTF8.GetBytes(payloadJson));
+
+        var invokeRequest = new InvokeAgentRuntimeRequest
+        {
+            AgentRuntimeArn = optionsValue.AgentRuntimeArn,
+            Qualifier = optionsValue.Qualifier,
+            ContentType = "application/json",
+            Accept = "text/event-stream",
+            RuntimeSessionId = sessionId,
+            Payload = payloadStream
+        };
+
+        var upstreamResponse = await bedrockClient.InvokeAgentRuntimeAsync(invokeRequest, cancellationToken);
+        var actualSessionId = upstreamResponse.RuntimeSessionId ?? sessionId;
+        await WriteSseEventAsync(downstreamResponse, "session", new { sessionId = actualSessionId }, cancellationToken);
+
+        if (upstreamResponse.Response is null)
+        {
+            await WriteSseEventAsync(downstreamResponse, "complete", new { sessionId = actualSessionId, reply = string.Empty }, cancellationToken);
+            return;
+        }
+
+        using var reader = new StreamReader(upstreamResponse.Response);
+
+        var sawComplete = false;
+        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data:", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var json = line["data:".Length..].Trim();
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                continue;
+            }
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            var eventType = root.TryGetProperty("type", out var typeElement) && typeElement.ValueKind == JsonValueKind.String
+                ? typeElement.GetString()
+                : null;
+
+            if (string.Equals(eventType, "session", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.Equals(eventType, "delta", StringComparison.OrdinalIgnoreCase))
+            {
+                if (TryGetString(root, "delta", out var delta) && !string.IsNullOrEmpty(delta))
+                {
+                    await WriteSseEventAsync(downstreamResponse, "delta", new { sessionId = actualSessionId, delta }, cancellationToken);
+                }
+
+                continue;
+            }
+
+            if (string.Equals(eventType, "complete", StringComparison.OrdinalIgnoreCase))
+            {
+                sawComplete = true;
+                var reply = TryGetString(root, "reply", out var completeReply) ? completeReply : string.Empty;
+                await WriteSseEventAsync(downstreamResponse, "complete", new { sessionId = actualSessionId, reply }, cancellationToken);
+                continue;
+            }
+
+            if (string.Equals(eventType, "error", StringComparison.OrdinalIgnoreCase))
+            {
+                var message = TryGetString(root, "message", out var errorMessage) ? errorMessage : "Streaming error.";
+                await WriteSseEventAsync(downstreamResponse, "error", new { sessionId = actualSessionId, message }, cancellationToken);
+                continue;
+            }
+
+            if (TryGetString(root, "error", out var frameworkError) || TryGetString(root, "message", out frameworkError))
+            {
+                await WriteSseEventAsync(downstreamResponse, "error", new { sessionId = actualSessionId, message = frameworkError }, cancellationToken);
+            }
+        }
+
+        if (!sawComplete)
+        {
+            await WriteSseEventAsync(downstreamResponse, "complete", new { sessionId = actualSessionId, reply = string.Empty }, cancellationToken);
+        }
+    }
+
+    private string BuildPayloadJson(string prompt, string sessionId, bool stream)
+    {
+        var bearerToken = GetForwardedAccessToken();
+        return JsonSerializer.Serialize(new
+        {
+            sessionId,
+            prompt,
+            message = prompt,
+            inputText = prompt,
+            stream,
+            accessToken = bearerToken,
+            apiBaseUrl = optionsValue.ApiBaseUrl,
+            swaggerUrl = optionsValue.SwaggerUrl,
+            userContext = new
+            {
+                email = httpContextAccessor.HttpContext?.User?.Identity?.Name,
+                roles = httpContextAccessor.HttpContext?.User?.Claims
+                    .Where(claim => claim.Type.EndsWith("/role", StringComparison.OrdinalIgnoreCase) || claim.Type == "role")
+                    .Select(claim => claim.Value)
+                    .ToArray() ?? Array.Empty<string>()
+            }
+        });
     }
 
     private string? GetForwardedAccessToken()
@@ -287,5 +427,13 @@ Answer:
 
         value = texts.Length == 0 ? string.Empty : string.Join("\n\n", texts);
         return texts.Length > 0;
+    }
+
+    private static async Task WriteSseEventAsync(HttpResponse response, string eventName, object payload, CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(payload);
+        await response.WriteAsync($"event: {eventName}\n", cancellationToken);
+        await response.WriteAsync($"data: {json}\n\n", cancellationToken);
+        await response.Body.FlushAsync(cancellationToken);
     }
 }

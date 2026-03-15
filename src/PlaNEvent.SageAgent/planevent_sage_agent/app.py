@@ -22,7 +22,7 @@ app = BedrockAgentCoreApp()
 
 
 @app.entrypoint
-def invoke(payload: dict[str, Any]) -> dict[str, Any]:
+async def invoke(payload: dict[str, Any]) -> Any:
     session_id = str(payload.get("sessionId") or "default")
     prompt = (
         payload.get("prompt")
@@ -45,9 +45,69 @@ def invoke(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
     prompt_with_context = build_prompt_with_history(prompt, session_id)
-    result = agent(prompt_with_context)
-    response_text = stringify_result(result)
+    if bool(payload.get("stream")):
+        return stream_agent_reply(agent, prompt_with_context, session_id, prompt)
+
+    response_text = await collect_agent_reply(agent, prompt_with_context)
     update_history(session_id, prompt, response_text)
+    return build_result_payload(response_text)
+
+
+async def collect_agent_reply(agent: Agent, prompt_with_context: str) -> str:
+    chunks: list[str] = []
+    final_text = ""
+
+    async for event in agent.stream_async(prompt_with_context):
+        if isinstance(event, dict):
+            if text := extract_stream_text(event):
+                chunks.append(text)
+            if "result" in event:
+                final_text = stringify_result(event["result"])
+
+    assembled = strip_thinking("".join(chunks).strip())
+    if assembled:
+        return assembled
+
+    if final_text.strip():
+        return strip_thinking(final_text)
+
+    return "No response from agent."
+
+
+async def stream_agent_reply(agent: Agent, prompt_with_context: str, session_id: str, prompt: str):
+    async def event_generator():
+        chunks: list[str] = []
+        final_text = ""
+
+        yield {"type": "session", "sessionId": session_id}
+
+        try:
+            async for event in agent.stream_async(prompt_with_context):
+                if not isinstance(event, dict):
+                    continue
+
+                if text := extract_stream_text(event):
+                    chunks.append(text)
+                    yield {"type": "delta", "delta": text, "sessionId": session_id}
+
+                if "result" in event:
+                    final_text = stringify_result(event["result"])
+
+            reply_text = strip_thinking("".join(chunks).strip())
+            if not reply_text:
+                reply_text = strip_thinking(final_text)
+            if not reply_text:
+                reply_text = "No response from agent."
+
+            update_history(session_id, prompt, reply_text)
+            yield {"type": "complete", "sessionId": session_id, "reply": reply_text}
+        except Exception as ex:
+            yield {"type": "error", "sessionId": session_id, "message": str(ex)}
+
+    return event_generator()
+
+
+def build_result_payload(response_text: str) -> dict[str, Any]:
     return {
         "result": {
             "role": "assistant",
@@ -136,6 +196,27 @@ def stringify_result(result: Any) -> str:
     if message:
         return strip_thinking(str(message))
     return strip_thinking(str(result))
+
+
+def extract_stream_text(event: dict[str, Any]) -> str:
+    if event.get("reasoning"):
+        return ""
+
+    text = event.get("data")
+    if isinstance(text, str) and text:
+        return text
+
+    result = event.get("result")
+    if result is not None:
+        return ""
+
+    delta = event.get("delta")
+    if isinstance(delta, dict):
+        delta_text = delta.get("text")
+        if isinstance(delta_text, str) and delta_text:
+            return delta_text
+
+    return ""
 
 
 def extract_content_text(payload: dict[str, Any]) -> str:
