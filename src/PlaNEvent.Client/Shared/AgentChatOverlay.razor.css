@@ -16,10 +16,6 @@
     letter-spacing: 0.01em;
 }
 
-.agent-thinking-block.is-formatting .agent-thinking-text {
-    color: #295ff0;
-}
-
 .agent-thinking-dots,
 .agent-loading-tail {
     display: inline-flex;
@@ -61,49 +57,32 @@
     line-height: 1.65;
 }
 
-.agent-text-block.html-transforming {
-    display: block;
-    min-width: min(100%, 18rem);
-}
-
-.agent-transition-shell {
-    display: grid;
-    align-items: start;
-}
-
-.agent-transition-shell > * {
-    grid-area: 1 / 1;
-}
-
-.agent-msg-text.plain-underlay {
-    color: rgba(92, 108, 133, 0.18);
-    text-shadow: 0 0 0.4px rgba(92, 108, 133, 0.25);
-}
-
-.agent-msg-html-overlay {
-    width: 100%;
-    overflow: hidden;
-    color: inherit;
-    white-space: normal;
-    clip-path: inset(0 100% 0 0);
-    animation: sageHtmlReveal 0.26s linear forwards;
-    pointer-events: none;
-}
-
-.agent-msg-html-overlay :global(p),
-.agent-msg-html-overlay :global(ul),
-.agent-msg-html-overlay :global(ol),
-.agent-msg-html-overlay :global(pre),
-.agent-msg-html-overlay :global(blockquote),
-.agent-msg-html-overlay :global(h1),
-.agent-msg-html-overlay :global(h2),
-.agent-msg-html-overlay :global(h3),
-.agent-msg-html-overlay :global(h4) {
+.agent-msg-html :global(p),
+.agent-msg-html :global(ul),
+.agent-msg-html :global(ol),
+.agent-msg-html :global(pre),
+.agent-msg-html :global(blockquote),
+.agent-msg-html :global(h1),
+.agent-msg-html :global(h2),
+.agent-msg-html :global(h3),
+.agent-msg-html :global(h4) {
     margin-bottom: 0.55rem;
 }
 
-.agent-msg-html-overlay :global(*:last-child) {
+.agent-msg-html :global(*:last-child) {
     margin-bottom: 0;
+}
+
+.agent-msg-html.typing-active-html::after {
+    content: "";
+    display: inline-block;
+    width: 0.12rem;
+    height: 1.05em;
+    margin-left: 0.2rem;
+    vertical-align: -0.14em;
+    border-radius: 999px;
+    background: #295ff0;
+    animation: sageCaretBlink 0.9s step-end infinite;
 }
 
 .agent-msg-text.typing-active::after {
@@ -157,19 +136,5 @@
     to {
         opacity: 1;
         transform: translateY(0);
-    }
-}
-
-@keyframes sageHtmlReveal {
-    from {
-        clip-path: inset(0 100% 0 0);
-        opacity: 0.76;
-        filter: saturate(0.9);
-    }
-
-    to {
-        clip-path: inset(0 0 0 0);
-        opacity: 1;
-        filter: saturate(1);
     }
 }

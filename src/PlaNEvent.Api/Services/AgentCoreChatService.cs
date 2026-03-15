@@ -493,7 +493,8 @@ public sealed class AgentCoreChatService(
                     await WriteSseEventAsync(downstreamResponse, "delta", new
                     {
                         sessionId,
-                        delta = streamedEvent.Delta
+                        delta = streamedEvent.Delta,
+                        htmlReply = FormatReplyAsHtml(replyBuffer.ToString())
                     }, cancellationToken);
                 }
 
