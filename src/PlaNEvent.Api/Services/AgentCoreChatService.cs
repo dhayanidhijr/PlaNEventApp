@@ -285,13 +285,9 @@ Answer:
         CancellationToken cancellationToken)
     {
         var payloadJson = BuildPayloadJson(prompt, sessionId, stream: true);
-        var accountId = ExtractAccountId(optionsValue.AgentRuntimeArn);
         var endpoint = $"https://bedrock-agentcore.{optionsValue.Region}.amazonaws.com";
         var resourcePath = $"/runtimes/{Uri.EscapeDataString(optionsValue.AgentRuntimeArn)}/invocations";
-        var queryParameters = new SortedDictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["accountId"] = accountId
-        };
+        var queryParameters = new SortedDictionary<string, string>(StringComparer.Ordinal);
 
         if (!string.IsNullOrWhiteSpace(optionsValue.Qualifier))
         {
@@ -489,12 +485,6 @@ Answer:
         var query = string.Join("&", queryParameters.Select(pair =>
             $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
         return $"{endpoint}{resourcePath}?{query}";
-    }
-
-    private static string ExtractAccountId(string runtimeArn)
-    {
-        var parts = runtimeArn.Split(':', StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length > 4 ? parts[4] : throw new InvalidOperationException("Unable to extract AWS account ID from AgentCore runtime ARN.");
     }
 
     private static string? GetRuntimeSessionId(HttpResponseMessage response)

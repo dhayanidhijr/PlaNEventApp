@@ -75,7 +75,7 @@ async def collect_agent_reply(agent: Agent, prompt_with_context: str) -> str:
     return "No response from agent."
 
 
-async def stream_agent_reply(agent: Agent, prompt_with_context: str, session_id: str, prompt: str, fallback_agent_factory):
+def stream_agent_reply(agent: Agent, prompt_with_context: str, session_id: str, prompt: str, fallback_agent_factory):
     async def event_generator():
         chunks: list[str] = []
         final_text = ""
