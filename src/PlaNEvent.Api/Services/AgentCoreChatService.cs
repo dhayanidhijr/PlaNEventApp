@@ -106,7 +106,16 @@ public sealed class AgentCoreChatService(
 
         try
         {
-            await InvokeAndStreamAsync(request.Message, sessionId, response, cancellationToken);
+            var result = await InvokeAndExtractAsync(request.Message, sessionId, cancellationToken);
+            var reply = string.IsNullOrWhiteSpace(result.Reply) ? "No response from agent." : result.Reply;
+
+            await WriteSseEventAsync(response, "session", new { sessionId = result.SessionId }, cancellationToken);
+            foreach (var chunk in ChunkTextForStream(reply))
+            {
+                await WriteSseEventAsync(response, "delta", new { sessionId = result.SessionId, delta = chunk }, cancellationToken);
+            }
+
+            await WriteSseEventAsync(response, "complete", new { sessionId = result.SessionId, reply }, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -138,96 +147,6 @@ public sealed class AgentCoreChatService(
         var responseText = await ReadResponseAsync(response);
 
         return (response.RuntimeSessionId ?? sessionId, ExtractReply(responseText));
-    }
-
-    private async Task InvokeAndStreamAsync(string prompt, string sessionId, HttpResponse downstreamResponse, CancellationToken cancellationToken)
-    {
-        var payloadJson = BuildPayloadJson(prompt, sessionId, stream: true);
-        using var payloadStream = new MemoryStream(Encoding.UTF8.GetBytes(payloadJson));
-
-        var invokeRequest = new InvokeAgentRuntimeRequest
-        {
-            AgentRuntimeArn = optionsValue.AgentRuntimeArn,
-            Qualifier = optionsValue.Qualifier,
-            ContentType = "application/json",
-            Accept = "text/event-stream",
-            RuntimeSessionId = sessionId,
-            Payload = payloadStream
-        };
-
-        var upstreamResponse = await bedrockClient.InvokeAgentRuntimeAsync(invokeRequest, cancellationToken);
-        var actualSessionId = upstreamResponse.RuntimeSessionId ?? sessionId;
-        await WriteSseEventAsync(downstreamResponse, "session", new { sessionId = actualSessionId }, cancellationToken);
-
-        if (upstreamResponse.Response is null)
-        {
-            await WriteSseEventAsync(downstreamResponse, "complete", new { sessionId = actualSessionId, reply = string.Empty }, cancellationToken);
-            return;
-        }
-
-        using var reader = new StreamReader(upstreamResponse.Response);
-
-        var sawComplete = false;
-        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
-        {
-            var line = await reader.ReadLineAsync(cancellationToken);
-            if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data:", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var json = line["data:".Length..].Trim();
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                continue;
-            }
-
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-            var eventType = root.TryGetProperty("type", out var typeElement) && typeElement.ValueKind == JsonValueKind.String
-                ? typeElement.GetString()
-                : null;
-
-            if (string.Equals(eventType, "session", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (string.Equals(eventType, "delta", StringComparison.OrdinalIgnoreCase))
-            {
-                if (TryGetString(root, "delta", out var delta) && !string.IsNullOrEmpty(delta))
-                {
-                    await WriteSseEventAsync(downstreamResponse, "delta", new { sessionId = actualSessionId, delta }, cancellationToken);
-                }
-
-                continue;
-            }
-
-            if (string.Equals(eventType, "complete", StringComparison.OrdinalIgnoreCase))
-            {
-                sawComplete = true;
-                var reply = TryGetString(root, "reply", out var completeReply) ? completeReply : string.Empty;
-                await WriteSseEventAsync(downstreamResponse, "complete", new { sessionId = actualSessionId, reply }, cancellationToken);
-                continue;
-            }
-
-            if (string.Equals(eventType, "error", StringComparison.OrdinalIgnoreCase))
-            {
-                var message = TryGetString(root, "message", out var errorMessage) ? errorMessage : "Streaming error.";
-                await WriteSseEventAsync(downstreamResponse, "error", new { sessionId = actualSessionId, message }, cancellationToken);
-                continue;
-            }
-
-            if (TryGetString(root, "error", out var frameworkError) || TryGetString(root, "message", out frameworkError))
-            {
-                await WriteSseEventAsync(downstreamResponse, "error", new { sessionId = actualSessionId, message = frameworkError }, cancellationToken);
-            }
-        }
-
-        if (!sawComplete)
-        {
-            await WriteSseEventAsync(downstreamResponse, "complete", new { sessionId = actualSessionId, reply = string.Empty }, cancellationToken);
-        }
     }
 
     private string BuildPayloadJson(string prompt, string sessionId, bool stream)
@@ -435,5 +354,45 @@ Answer:
         await response.WriteAsync($"event: {eventName}\n", cancellationToken);
         await response.WriteAsync($"data: {json}\n\n", cancellationToken);
         await response.Body.FlushAsync(cancellationToken);
+    }
+
+    private static IReadOnlyList<string> ChunkTextForStream(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return Array.Empty<string>();
+        }
+
+        var sentenceChunks = Regex.Split(text.Trim(), @"(?<=[.!?])\s+")
+            .Where(chunk => !string.IsNullOrWhiteSpace(chunk))
+            .ToArray();
+
+        if (sentenceChunks.Length > 1)
+        {
+            return sentenceChunks
+                .Select((chunk, index) => index < sentenceChunks.Length - 1 ? $"{chunk} " : chunk)
+                .ToArray();
+        }
+
+        var words = text.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length <= 6)
+        {
+            return new[] { text.Trim() };
+        }
+
+        var chunks = new List<string>();
+        for (var i = 0; i < words.Length; i += 4)
+        {
+            var slice = words.Skip(i).Take(4).ToArray();
+            var chunk = string.Join(' ', slice);
+            if (i + 4 < words.Length)
+            {
+                chunk += " ";
+            }
+
+            chunks.Add(chunk);
+        }
+
+        return chunks;
     }
 }
