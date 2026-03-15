@@ -108,6 +108,11 @@ public sealed class AgentCoreChatService(
         {
             var result = await InvokeAndExtractAsync(request.Message, sessionId, cancellationToken);
             var reply = string.IsNullOrWhiteSpace(result.Reply) ? "No response from agent." : result.Reply;
+            var htmlFormatPrompt = BuildHtmlFormatPrompt(reply);
+            var formatPass = await InvokeAndExtractAsync(htmlFormatPrompt, BuildFormattingSessionId(result.SessionId), cancellationToken);
+            var htmlReply = string.IsNullOrWhiteSpace(formatPass.Reply)
+                ? $"<p>{WebUtility.HtmlEncode(reply)}</p>"
+                : formatPass.Reply;
 
             await WriteSseEventAsync(response, "session", new { sessionId = result.SessionId }, cancellationToken);
             foreach (var chunk in ChunkTextForStream(reply))
@@ -115,7 +120,7 @@ public sealed class AgentCoreChatService(
                 await WriteSseEventAsync(response, "delta", new { sessionId = result.SessionId, delta = chunk }, cancellationToken);
             }
 
-            await WriteSseEventAsync(response, "complete", new { sessionId = result.SessionId, reply }, cancellationToken);
+            await WriteSseEventAsync(response, "complete", new { sessionId = result.SessionId, reply, htmlReply }, cancellationToken);
         }
         catch (Exception ex)
         {

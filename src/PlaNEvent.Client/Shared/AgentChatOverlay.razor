@@ -160,6 +160,16 @@
                 if (root.TryGetProperty("reply", out var replyElement) && replyElement.ValueKind == JsonValueKind.String)
                 {
                     var reply = replyElement.GetString() ?? string.Empty;
+                    if (root.TryGetProperty("htmlReply", out var htmlReplyElement) && htmlReplyElement.ValueKind == JsonValueKind.String)
+                    {
+                        var htmlReply = htmlReplyElement.GetString() ?? string.Empty;
+                        if (!string.IsNullOrWhiteSpace(htmlReply))
+                        {
+                            OverlayState.SetLastAgentMessage(htmlReply, true);
+                            return InvokeAsync(StateHasChanged);
+                        }
+                    }
+
                     var hasVisibleText = messages.Count > 0 && !string.IsNullOrWhiteSpace(messages[^1].Text);
                     if (!hasVisibleText)
                     {
