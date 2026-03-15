@@ -3,7 +3,6 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
-using System.Globalization;
 using Amazon.BedrockAgentCore;
 using Amazon.BedrockAgentCore.Model;
 using Microsoft.AspNetCore.Http;
@@ -48,13 +47,12 @@ public sealed class AgentCoreChatService(
         try
         {
             var firstPass = await InvokeAndExtractAsync(request.Message, sessionId, cancellationToken);
-            var answerText = string.IsNullOrWhiteSpace(firstPass.Reply) ? "No response from agent." : firstPass.Reply;
-            var html = FormatReplyAsHtml(answerText);
+            var html = string.IsNullOrWhiteSpace(firstPass.Reply) ? "<p><em>No response from agent.</em></p>" : firstPass.Reply.Trim();
 
             return new AgentChatResponse
             {
                 SessionId = firstPass.SessionId,
-                Reply = answerText,
+                Reply = html,
                 HtmlReply = html
             };
         }
@@ -102,26 +100,24 @@ public sealed class AgentCoreChatService(
         try
         {
             var streamResult = await StreamFromRuntimeAsync(request.Message, sessionId, response, cancellationToken);
-            var reply = string.IsNullOrWhiteSpace(streamResult.Reply) ? "No response from agent." : streamResult.Reply;
-            var htmlReply = FormatReplyAsHtml(reply);
+            var htmlReply = string.IsNullOrWhiteSpace(streamResult.Reply) ? "<p><em>No response from agent.</em></p>" : streamResult.Reply.Trim();
 
-            await WriteSseEventAsync(response, "complete", new { sessionId = streamResult.SessionId, reply, htmlReply }, cancellationToken);
+            await WriteSseEventAsync(response, "complete", new { sessionId = streamResult.SessionId, reply = htmlReply, htmlReply }, cancellationToken);
         }
         catch (Exception)
         {
             try
             {
                 var result = await InvokeAndExtractAsync(request.Message, sessionId, cancellationToken);
-                var reply = string.IsNullOrWhiteSpace(result.Reply) ? "No response from agent." : result.Reply;
-                var htmlReply = FormatReplyAsHtml(reply);
+                var htmlReply = string.IsNullOrWhiteSpace(result.Reply) ? "<p><em>No response from agent.</em></p>" : result.Reply.Trim();
 
                 await WriteSseEventAsync(response, "session", new { sessionId = result.SessionId }, cancellationToken);
-                foreach (var chunk in ChunkTextForStream(reply))
+                foreach (var chunk in ChunkTextForStream(htmlReply))
                 {
-                    await WriteSseEventAsync(response, "delta", new { sessionId = result.SessionId, delta = chunk }, cancellationToken);
+                    await WriteSseEventAsync(response, "delta", new { sessionId = result.SessionId, delta = chunk, htmlReply = chunk }, cancellationToken);
                 }
 
-                await WriteSseEventAsync(response, "complete", new { sessionId = result.SessionId, reply, htmlReply }, cancellationToken);
+                await WriteSseEventAsync(response, "complete", new { sessionId = result.SessionId, reply = htmlReply, htmlReply }, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -197,117 +193,6 @@ public sealed class AgentCoreChatService(
         return authorization.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase)
             ? authorization[bearerPrefix.Length..].Trim()
             : authorization.Trim();
-    }
-
-    private static string FormatReplyAsHtml(string answerText)
-    {
-        if (string.IsNullOrWhiteSpace(answerText))
-        {
-            return "<p><em>No response from agent.</em></p>";
-        }
-
-        var lines = answerText.Replace("\r\n", "\n").Split('\n');
-        var html = new StringBuilder();
-        var paragraph = new List<string>();
-        var unorderedList = new List<string>();
-        var orderedList = new List<string>();
-
-        void FlushParagraph()
-        {
-            if (paragraph.Count == 0)
-            {
-                return;
-            }
-
-            var text = string.Join(' ', paragraph).Trim();
-            if (text.Length > 0)
-            {
-                html.Append("<p>")
-                    .Append(ApplyInlineFormatting(text))
-                    .Append("</p>");
-            }
-
-            paragraph.Clear();
-        }
-
-        void FlushUnorderedList()
-        {
-            if (unorderedList.Count == 0)
-            {
-                return;
-            }
-
-            html.Append("<ul>");
-            foreach (var item in unorderedList)
-            {
-                html.Append("<li>")
-                    .Append(ApplyInlineFormatting(item))
-                    .Append("</li>");
-            }
-
-            html.Append("</ul>");
-            unorderedList.Clear();
-        }
-
-        void FlushOrderedList()
-        {
-            if (orderedList.Count == 0)
-            {
-                return;
-            }
-
-            html.Append("<ol>");
-            foreach (var item in orderedList)
-            {
-                html.Append("<li>")
-                    .Append(ApplyInlineFormatting(item))
-                    .Append("</li>");
-            }
-
-            html.Append("</ol>");
-            orderedList.Clear();
-        }
-
-        foreach (var rawLine in lines)
-        {
-            var line = rawLine.Trim();
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                FlushParagraph();
-                FlushUnorderedList();
-                FlushOrderedList();
-                continue;
-            }
-
-            if (TryParseListItem(line, out var itemText, out var isOrdered))
-            {
-                FlushParagraph();
-                if (isOrdered)
-                {
-                    FlushUnorderedList();
-                    orderedList.Add(itemText);
-                }
-                else
-                {
-                    FlushOrderedList();
-                    unorderedList.Add(itemText);
-                }
-
-                continue;
-            }
-
-            FlushUnorderedList();
-            FlushOrderedList();
-            paragraph.Add(line);
-        }
-
-        FlushParagraph();
-        FlushUnorderedList();
-        FlushOrderedList();
-
-        return html.Length == 0
-            ? $"<p>{ApplyInlineFormatting(answerText.Trim())}</p>"
-            : html.ToString();
     }
 
     private static async Task<string> ReadResponseAsync(InvokeAgentRuntimeResponse response)
@@ -412,43 +297,6 @@ public sealed class AgentCoreChatService(
         return (actualSessionId, replyBuffer.ToString().Trim());
     }
 
-    private static bool TryParseListItem(string line, out string itemText, out bool isOrdered)
-    {
-        var unorderedMatch = Regex.Match(line, @"^(?:[-*•]\s+)(.+)$");
-        if (unorderedMatch.Success)
-        {
-            itemText = unorderedMatch.Groups[1].Value.Trim();
-            isOrdered = false;
-            return true;
-        }
-
-        var orderedMatch = Regex.Match(line, @"^(?:\d+[\.\)]\s+)(.+)$");
-        if (orderedMatch.Success)
-        {
-            itemText = orderedMatch.Groups[1].Value.Trim();
-            isOrdered = true;
-            return true;
-        }
-
-        itemText = string.Empty;
-        isOrdered = false;
-        return false;
-    }
-
-    private static string ApplyInlineFormatting(string text)
-    {
-        var encoded = WebUtility.HtmlEncode(text);
-        encoded = Regex.Replace(encoded, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
-        encoded = Regex.Replace(encoded, @"\*(.+?)\*", "<em>$1</em>");
-        encoded = Regex.Replace(encoded, @"`(.+?)`", "<code>$1</code>");
-        encoded = Regex.Replace(
-            encoded,
-            @"(https?://[^\s<]+)",
-            match => $"<a href=\"{match.Value}\" target=\"_blank\" rel=\"noopener noreferrer\">{match.Value}</a>",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        return encoded;
-    }
-
     private static string NormalizeSessionId(string? sessionId)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
@@ -494,7 +342,7 @@ public sealed class AgentCoreChatService(
                     {
                         sessionId,
                         delta = streamedEvent.Delta,
-                        htmlReply = FormatReplyAsHtml(replyBuffer.ToString())
+                        htmlReply = replyBuffer.ToString()
                     }, cancellationToken);
                 }
 

@@ -26,15 +26,15 @@
                 {
                     @foreach (var item in messages)
                     {
-                        <div class="agent-msg @(item.IsUser ? "user" : "agent") @(item.IsThinking ? "is-thinking" : string.Empty) @(item.IsStreaming ? "is-streaming" : string.Empty) @(item.IsHtmlTransitioning ? "is-html-transitioning" : string.Empty) @(item.IsFormatting ? "is-formatting" : string.Empty)">
+                        <div class="agent-msg @(item.IsUser ? "user" : "agent") @(item.IsThinking ? "is-thinking" : string.Empty) @(item.IsStreaming ? "is-streaming" : string.Empty)">
                             <div class="agent-msg-role">@(item.IsUser ? "You" : "Sage Response")</div>
                             @if (item.IsHtml)
                             {
                                 <div class="agent-msg-html @(item.IsStreaming ? "typing-active-html" : string.Empty)">@((MarkupString)item.Text)</div>
                             }
-                            else if (item.IsThinking || item.IsFormatting)
+                            else if (item.IsThinking)
                             {
-                                <div class="agent-thinking-block @(item.IsFormatting ? "is-formatting" : string.Empty)" aria-live="polite" aria-label="@(item.IsFormatting ? "Sage is formatting" : "Sage is thinking")">
+                                <div class="agent-thinking-block" aria-live="polite" aria-label="Sage is thinking">
                                     <div class="agent-thinking-dots">
                                         <span></span>
                                         <span></span>
@@ -45,25 +45,7 @@
                             }
                             else
                             {
-                                <div class="agent-text-block @(item.IsHtmlTransitioning ? "html-transforming" : string.Empty)">
-                                    <div class="agent-transition-shell">
-                                        <div class="agent-msg-text @(item.IsStreaming ? "typing-active" : string.Empty) @(item.IsHtmlTransitioning ? "plain-underlay" : string.Empty)">@item.Text</div>
-                                    @if (item.IsHtmlTransitioning && !string.IsNullOrWhiteSpace(item.HtmlText))
-                                    {
-                                        <div class="agent-msg-html-overlay">
-                                            @((MarkupString)item.HtmlText)
-                                        </div>
-                                    }
-                                    </div>
-                                    @if (item.ShowLoadingTail)
-                                    {
-                                        <div class="agent-loading-tail" aria-hidden="true">
-                                            <span></span>
-                                            <span></span>
-                                            <span></span>
-                                        </div>
-                                    }
-                                </div>
+                                <div class="agent-msg-text">@item.Text</div>
                             }
                         </div>
                     }
@@ -187,27 +169,13 @@
 
             if (string.Equals(eventName, "delta", StringComparison.OrdinalIgnoreCase))
             {
-                if (root.TryGetProperty("delta", out var deltaElement) && deltaElement.ValueKind == JsonValueKind.String)
+                if (root.TryGetProperty("htmlReply", out var htmlDeltaElement) && htmlDeltaElement.ValueKind == JsonValueKind.String)
                 {
-                    var delta = deltaElement.GetString() ?? string.Empty;
-                    if (root.TryGetProperty("htmlReply", out var htmlDeltaElement) && htmlDeltaElement.ValueKind == JsonValueKind.String)
+                    var htmlDelta = htmlDeltaElement.GetString() ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(htmlDelta))
                     {
-                        var htmlDelta = htmlDeltaElement.GetString() ?? string.Empty;
-                        if (!string.IsNullOrWhiteSpace(htmlDelta))
-                        {
-                            OverlayState.SetLastAgentHtmlStream(htmlDelta);
-                            return InvokeAsync(StateHasChanged);
-                        }
-                    }
-
-                    var last = OverlayState.GetLastMessage();
-                    if (last is not null && !last.IsUser && string.Equals(last.Text, ThinkingPlaceholder, StringComparison.Ordinal))
-                    {
-                        OverlayState.SetLastAgentMessage(delta, false, false, true, true);
-                    }
-                    else
-                    {
-                        OverlayState.AppendToLastAgentMessage(delta);
+                        OverlayState.SetLastAgentHtmlStream(htmlDelta);
+                        return InvokeAsync(StateHasChanged);
                     }
                 }
 
@@ -223,7 +191,6 @@
 
                 if (root.TryGetProperty("reply", out var replyElement) && replyElement.ValueKind == JsonValueKind.String)
                 {
-                    var reply = replyElement.GetString() ?? string.Empty;
                     if (root.TryGetProperty("htmlReply", out var htmlReplyElement) && htmlReplyElement.ValueKind == JsonValueKind.String)
                     {
                         var htmlReply = htmlReplyElement.GetString() ?? string.Empty;
@@ -232,12 +199,6 @@
                             OverlayState.SetLastAgentMessage(htmlReply, true);
                             return InvokeAsync(StateHasChanged);
                         }
-                    }
-
-                    var hasVisibleText = messages.Count > 0 && !string.IsNullOrWhiteSpace(messages[^1].Text);
-                    if (!hasVisibleText || string.Equals(messages[^1].Text, ThinkingPlaceholder, StringComparison.Ordinal))
-                    {
-                        OverlayState.SetLastAgentMessage(reply, false);
                     }
                 }
 

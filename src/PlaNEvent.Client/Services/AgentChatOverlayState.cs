@@ -36,25 +36,23 @@ public sealed class AgentChatOverlayState
     {
         if (Messages.Count == 0)
         {
-            BeginAgentMessage();
+            BeginAgentMessage(true);
         }
 
         var last = Messages[^1];
         if (last.IsUser)
         {
-            BeginAgentMessage();
+            BeginAgentMessage(true);
             last = Messages[^1];
         }
 
         Messages[^1] = last with
         {
             Text = $"{last.Text}{text}",
-            IsHtml = false,
+            IsHtml = true,
             IsThinking = false,
             IsStreaming = true,
-            ShowLoadingTail = true,
-            HtmlText = null,
-            IsHtmlTransitioning = false
+            ShowLoadingTail = false
         };
         Changed?.Invoke();
     }
@@ -63,14 +61,14 @@ public sealed class AgentChatOverlayState
     {
         if (Messages.Count == 0)
         {
-            Messages.Add(new ChatLine(false, htmlText, true, false, true, false, null, false, false));
+            Messages.Add(new ChatLine(false, htmlText, true, false, true, false));
         }
         else
         {
             var last = Messages[^1];
             if (last.IsUser)
             {
-                Messages.Add(new ChatLine(false, htmlText, true, false, true, false, null, false, false));
+                Messages.Add(new ChatLine(false, htmlText, true, false, true, false));
             }
             else
             {
@@ -80,10 +78,7 @@ public sealed class AgentChatOverlayState
                     IsHtml = true,
                     IsThinking = false,
                     IsStreaming = true,
-                    ShowLoadingTail = false,
-                    HtmlText = null,
-                    IsHtmlTransitioning = false,
-                    IsFormatting = false
+                    ShowLoadingTail = false
                 };
             }
         }
@@ -101,59 +96,18 @@ public sealed class AgentChatOverlayState
         SetLastAgentMessage(text, false, true, false, false);
     }
 
-    public void SetLastAgentFormatting(string text)
-    {
-        SetLastAgentMessage(text, false, false, false, true, null, false, true);
-    }
-
-    public void BeginHtmlTransitionOnLastAgentMessage(string htmlText)
-    {
-        if (Messages.Count == 0)
-        {
-            Messages.Add(new ChatLine(false, string.Empty, false, false, false, false, htmlText, true));
-        }
-        else
-        {
-            var last = Messages[^1];
-            if (last.IsUser)
-            {
-                Messages.Add(new ChatLine(false, string.Empty, false, false, false, false, htmlText, true));
-            }
-            else
-            {
-                Messages[^1] = last with
-                {
-                    IsHtml = false,
-                    IsThinking = false,
-                    IsStreaming = false,
-                    ShowLoadingTail = true,
-                    HtmlText = htmlText,
-                    IsHtmlTransitioning = true,
-                    IsFormatting = false
-                };
-            }
-        }
-
-        Changed?.Invoke();
-    }
-
     public void SetLastAgentMessage(string text, bool isHtml, bool isThinking, bool isStreaming, bool showLoadingTail)
     {
-        SetLastAgentMessage(text, isHtml, isThinking, isStreaming, showLoadingTail, null, false, false);
-    }
-
-    public void SetLastAgentMessage(string text, bool isHtml, bool isThinking, bool isStreaming, bool showLoadingTail, string? htmlText, bool isHtmlTransitioning, bool isFormatting)
-    {
         if (Messages.Count == 0)
         {
-            Messages.Add(new ChatLine(false, text, isHtml, isThinking, isStreaming, showLoadingTail, htmlText, isHtmlTransitioning, isFormatting));
+            Messages.Add(new ChatLine(false, text, isHtml, isThinking, isStreaming, showLoadingTail));
         }
         else
         {
             var last = Messages[^1];
             if (last.IsUser)
             {
-                Messages.Add(new ChatLine(false, text, isHtml, isThinking, isStreaming, showLoadingTail, htmlText, isHtmlTransitioning, isFormatting));
+                Messages.Add(new ChatLine(false, text, isHtml, isThinking, isStreaming, showLoadingTail));
             }
             else
             {
@@ -163,10 +117,7 @@ public sealed class AgentChatOverlayState
                     IsHtml = isHtml,
                     IsThinking = isThinking,
                     IsStreaming = isStreaming,
-                    ShowLoadingTail = showLoadingTail,
-                    HtmlText = isHtml ? null : htmlText ?? last.HtmlText,
-                    IsHtmlTransitioning = isHtmlTransitioning,
-                    IsFormatting = isFormatting
+                    ShowLoadingTail = showLoadingTail
                 };
             }
         }
@@ -192,8 +143,5 @@ public sealed class AgentChatOverlayState
         bool IsHtml,
         bool IsThinking = false,
         bool IsStreaming = false,
-        bool ShowLoadingTail = false,
-        string? HtmlText = null,
-        bool IsHtmlTransitioning = false,
-        bool IsFormatting = false);
+        bool ShowLoadingTail = false);
 }

@@ -43,20 +43,6 @@
     animation-delay: 0.32s;
 }
 
-.agent-text-block {
-    display: inline-flex;
-    align-items: flex-end;
-    gap: 0.55rem;
-    flex-wrap: wrap;
-    position: relative;
-}
-
-.agent-msg-text {
-    white-space: pre-wrap;
-    word-break: break-word;
-    line-height: 1.65;
-}
-
 .agent-msg-html :global(p),
 .agent-msg-html :global(ul),
 .agent-msg-html :global(ol),
@@ -74,18 +60,6 @@
 }
 
 .agent-msg-html.typing-active-html::after {
-    content: "";
-    display: inline-block;
-    width: 0.12rem;
-    height: 1.05em;
-    margin-left: 0.2rem;
-    vertical-align: -0.14em;
-    border-radius: 999px;
-    background: #295ff0;
-    animation: sageCaretBlink 0.9s step-end infinite;
-}
-
-.agent-msg-text.typing-active::after {
     content: "";
     display: inline-block;
     width: 0.12rem;

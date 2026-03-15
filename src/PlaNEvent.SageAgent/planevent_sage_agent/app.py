@@ -191,6 +191,12 @@ Rules:
 - For read-only lookup endpoints with no parameters, call them with no arguments.
 - If a tool fails due to missing parameters, do not retry the same invalid call repeatedly. Re-check the schema, choose the correct tool, or ask only for the specific missing input.
 - When the user asks for a count, call the relevant list endpoint and count the returned items.
+- Always respond as a valid HTML fragment suitable for direct rendering in a chat bubble.
+- Do not return Markdown.
+- Do not return plain text outside HTML tags.
+- Do not include `html`, `head`, `body`, `style`, or `script` tags.
+- Use only safe semantic tags such as `p`, `ul`, `ol`, `li`, `strong`, `em`, `code`, `pre`, `blockquote`, `a`, `h3`, and `h4`.
+- Keep the HTML concise, readable, and ready to render as-is.
 """.strip()
 
 
