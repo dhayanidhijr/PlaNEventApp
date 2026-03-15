@@ -46,26 +46,50 @@ public sealed class AgentChatOverlayState
             last = Messages[^1];
         }
 
-        Messages[^1] = last with { Text = $"{last.Text}{text}", IsHtml = false };
+        Messages[^1] = last with
+        {
+            Text = $"{last.Text}{text}",
+            IsHtml = false,
+            IsThinking = false,
+            IsStreaming = true,
+            ShowLoadingTail = true
+        };
         Changed?.Invoke();
     }
 
     public void SetLastAgentMessage(string text, bool isHtml = false)
     {
+        SetLastAgentMessage(text, isHtml, false, false, false);
+    }
+
+    public void SetLastAgentThinking(string text)
+    {
+        SetLastAgentMessage(text, false, true, false, false);
+    }
+
+    public void SetLastAgentMessage(string text, bool isHtml, bool isThinking, bool isStreaming, bool showLoadingTail)
+    {
         if (Messages.Count == 0)
         {
-            Messages.Add(new ChatLine(false, text, isHtml));
+            Messages.Add(new ChatLine(false, text, isHtml, isThinking, isStreaming, showLoadingTail));
         }
         else
         {
             var last = Messages[^1];
             if (last.IsUser)
             {
-                Messages.Add(new ChatLine(false, text, isHtml));
+                Messages.Add(new ChatLine(false, text, isHtml, isThinking, isStreaming, showLoadingTail));
             }
             else
             {
-                Messages[^1] = last with { Text = text, IsHtml = isHtml };
+                Messages[^1] = last with
+                {
+                    Text = text,
+                    IsHtml = isHtml,
+                    IsThinking = isThinking,
+                    IsStreaming = isStreaming,
+                    ShowLoadingTail = showLoadingTail
+                };
             }
         }
 
@@ -84,5 +108,11 @@ public sealed class AgentChatOverlayState
         Changed?.Invoke();
     }
 
-    public sealed record ChatLine(bool IsUser, string Text, bool IsHtml);
+    public sealed record ChatLine(
+        bool IsUser,
+        string Text,
+        bool IsHtml,
+        bool IsThinking = false,
+        bool IsStreaming = false,
+        bool ShowLoadingTail = false);
 }
