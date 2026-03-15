@@ -1,0 +1,78 @@
+name: deploy-planevent-sage-agent
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - "src/PlaNEvent.SageAgent/**"
+  workflow_dispatch:
+
+concurrency:
+  group: sage-agent-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-sage-agent:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: src/PlaNEvent.SageAgent
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: "1"
+      AGENTCORE_AGENT_NAME: planeventsageai
+      AGENTCORE_RUNTIME_ROLE_ARN: ${{ secrets.AGENTCORE_RUNTIME_ROLE_ARN }}
+      AGENTCORE_CODEBUILD_ROLE_ARN: ${{ secrets.AGENTCORE_CODEBUILD_ROLE_ARN }}
+      AGENTCORE_ECR_URI: ${{ secrets.AGENTCORE_ECR_URI }}
+      SAGE_MODEL_ID: ${{ secrets.SAGE_MODEL_ID }}
+      PLANEVENT_API_BASE_URL: ${{ secrets.PLANEVENT_API_BASE_URL }}
+      PLANEVENT_SWAGGER_URL: ${{ secrets.PLANEVENT_SWAGGER_URL }}
+      PLANEVENT_SYSTEM_TOKEN: ${{ secrets.PLANEVENT_SYSTEM_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install bedrock-agentcore-starter-toolkit
+
+      - name: Validate Sage agent
+        run: |
+          python -m py_compile main.py planevent_sage_agent/app.py planevent_sage_agent/openapi_tools.py
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Configure AgentCore
+        run: |
+          agentcore configure \
+            --entrypoint main.py \
+            --name "${AGENTCORE_AGENT_NAME}" \
+            --execution-role "${AGENTCORE_RUNTIME_ROLE_ARN}" \
+            --code-build-execution-role "${AGENTCORE_CODEBUILD_ROLE_ARN}" \
+            --ecr "${AGENTCORE_ECR_URI}" \
+            --requirements-file requirements.txt \
+            --container-runtime docker \
+            --region "${AWS_REGION}" \
+            --language python \
+            --non-interactive
+
+      - name: Deploy Sage agent
+        run: |
+          agentcore deploy
