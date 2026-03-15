@@ -72,6 +72,11 @@ public sealed class AgentChatOverlayState
         Changed?.Invoke();
     }
 
+    public ChatLine? GetLastMessage()
+    {
+        return Messages.Count == 0 ? null : Messages[^1];
+    }
+
     public void ClearConversation()
     {
         SessionId = null;

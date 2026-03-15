@@ -52,6 +52,7 @@
 }
 
 @code {
+    private const string ThinkingPlaceholder = "Sage is thinking...";
     private string prompt = string.Empty;
     private bool isSending;
     private DotNetObjectReference<AgentChatOverlay>? streamReference;
@@ -86,6 +87,7 @@
         prompt = string.Empty;
         OverlayState.AddMessage(new AgentChatOverlayState.ChatLine(true, text, false));
         OverlayState.BeginAgentMessage();
+        OverlayState.SetLastAgentMessage(ThinkingPlaceholder, false);
         isSending = true;
 
         try
@@ -144,7 +146,16 @@
             {
                 if (root.TryGetProperty("delta", out var deltaElement) && deltaElement.ValueKind == JsonValueKind.String)
                 {
-                    OverlayState.AppendToLastAgentMessage(deltaElement.GetString() ?? string.Empty);
+                    var delta = deltaElement.GetString() ?? string.Empty;
+                    var last = OverlayState.GetLastMessage();
+                    if (last is not null && !last.IsUser && string.Equals(last.Text, ThinkingPlaceholder, StringComparison.Ordinal))
+                    {
+                        OverlayState.SetLastAgentMessage(delta, false);
+                    }
+                    else
+                    {
+                        OverlayState.AppendToLastAgentMessage(delta);
+                    }
                 }
 
                 return InvokeAsync(StateHasChanged);
@@ -171,7 +182,7 @@
                     }
 
                     var hasVisibleText = messages.Count > 0 && !string.IsNullOrWhiteSpace(messages[^1].Text);
-                    if (!hasVisibleText)
+                    if (!hasVisibleText || string.Equals(messages[^1].Text, ThinkingPlaceholder, StringComparison.Ordinal))
                     {
                         OverlayState.SetLastAgentMessage(reply, false);
                     }
