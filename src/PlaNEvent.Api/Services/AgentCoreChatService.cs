@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
+using System.Globalization;
 using Amazon.BedrockAgentCore;
 using Amazon.BedrockAgentCore.Model;
 using Microsoft.AspNetCore.Http;
@@ -48,13 +49,7 @@ public sealed class AgentCoreChatService(
         {
             var firstPass = await InvokeAndExtractAsync(request.Message, sessionId, cancellationToken);
             var answerText = string.IsNullOrWhiteSpace(firstPass.Reply) ? "No response from agent." : firstPass.Reply;
-
-            var htmlFormatPrompt = BuildHtmlFormatPrompt(answerText);
-            var formatPass = await InvokeAndExtractAsync(htmlFormatPrompt, BuildFormattingSessionId(firstPass.SessionId), cancellationToken);
-
-            var html = string.IsNullOrWhiteSpace(formatPass.Reply)
-                ? $"<p>{WebUtility.HtmlEncode(answerText)}</p>"
-                : formatPass.Reply;
+            var html = FormatReplyAsHtml(answerText);
 
             return new AgentChatResponse
             {
@@ -108,11 +103,7 @@ public sealed class AgentCoreChatService(
         {
             var streamResult = await StreamFromRuntimeAsync(request.Message, sessionId, response, cancellationToken);
             var reply = string.IsNullOrWhiteSpace(streamResult.Reply) ? "No response from agent." : streamResult.Reply;
-            var htmlFormatPrompt = BuildHtmlFormatPrompt(reply);
-            var formatPass = await InvokeAndExtractAsync(htmlFormatPrompt, BuildFormattingSessionId(streamResult.SessionId), cancellationToken);
-            var htmlReply = string.IsNullOrWhiteSpace(formatPass.Reply)
-                ? $"<p>{WebUtility.HtmlEncode(reply)}</p>"
-                : formatPass.Reply;
+            var htmlReply = FormatReplyAsHtml(reply);
 
             await WriteSseEventAsync(response, "complete", new { sessionId = streamResult.SessionId, reply, htmlReply }, cancellationToken);
         }
@@ -122,11 +113,7 @@ public sealed class AgentCoreChatService(
             {
                 var result = await InvokeAndExtractAsync(request.Message, sessionId, cancellationToken);
                 var reply = string.IsNullOrWhiteSpace(result.Reply) ? "No response from agent." : result.Reply;
-                var htmlFormatPrompt = BuildHtmlFormatPrompt(reply);
-                var formatPass = await InvokeAndExtractAsync(htmlFormatPrompt, BuildFormattingSessionId(result.SessionId), cancellationToken);
-                var htmlReply = string.IsNullOrWhiteSpace(formatPass.Reply)
-                    ? $"<p>{WebUtility.HtmlEncode(reply)}</p>"
-                    : formatPass.Reply;
+                var htmlReply = FormatReplyAsHtml(reply);
 
                 await WriteSseEventAsync(response, "session", new { sessionId = result.SessionId }, cancellationToken);
                 foreach (var chunk in ChunkTextForStream(reply))
@@ -212,51 +199,115 @@ public sealed class AgentCoreChatService(
             : authorization.Trim();
     }
 
-    private static string BuildHtmlFormatPrompt(string answerText)
+    private static string FormatReplyAsHtml(string answerText)
     {
-        return $"""
-Format the following assistant answer as clean semantic HTML for a web chat response.
-Rules:
-- Return only valid HTML fragment (no markdown fences).
-- Do not include <html>, <head>, <body>, <script>, or <style>.
-- Use only safe tags like p, ul, ol, li, strong, em, code, pre, a, h1-h4, blockquote, br.
-- Preserve meaning and structure.
-
-Answer:
-{answerText}
-""";
-    }
-
-    private static string NormalizeSessionId(string? sessionId)
-    {
-        if (string.IsNullOrWhiteSpace(sessionId))
+        if (string.IsNullOrWhiteSpace(answerText))
         {
-            return $"session{Guid.NewGuid():N}";
+            return "<p><em>No response from agent.</em></p>";
         }
 
-        var normalized = sessionId.Trim();
-        if (normalized.Length < 33)
+        var lines = answerText.Replace("\r\n", "\n").Split('\n');
+        var html = new StringBuilder();
+        var paragraph = new List<string>();
+        var unorderedList = new List<string>();
+        var orderedList = new List<string>();
+
+        void FlushParagraph()
         {
-            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized))).ToLowerInvariant();
-            normalized += hash[..(33 - normalized.Length)];
+            if (paragraph.Count == 0)
+            {
+                return;
+            }
+
+            var text = string.Join(' ', paragraph).Trim();
+            if (text.Length > 0)
+            {
+                html.Append("<p>")
+                    .Append(ApplyInlineFormatting(text))
+                    .Append("</p>");
+            }
+
+            paragraph.Clear();
         }
 
-        if (normalized.Length > 100)
+        void FlushUnorderedList()
         {
-            normalized = normalized[..100];
+            if (unorderedList.Count == 0)
+            {
+                return;
+            }
+
+            html.Append("<ul>");
+            foreach (var item in unorderedList)
+            {
+                html.Append("<li>")
+                    .Append(ApplyInlineFormatting(item))
+                    .Append("</li>");
+            }
+
+            html.Append("</ul>");
+            unorderedList.Clear();
         }
 
-        return normalized;
-    }
+        void FlushOrderedList()
+        {
+            if (orderedList.Count == 0)
+            {
+                return;
+            }
 
-    private static string BuildFormattingSessionId(string sessionId)
-    {
-        var baseId = string.IsNullOrWhiteSpace(sessionId)
-            ? $"session{Guid.NewGuid():N}"
-            : sessionId.Trim();
+            html.Append("<ol>");
+            foreach (var item in orderedList)
+            {
+                html.Append("<li>")
+                    .Append(ApplyInlineFormatting(item))
+                    .Append("</li>");
+            }
 
-        var formattingSessionId = $"{baseId}-fmt";
-        return formattingSessionId.Length > 100 ? formattingSessionId[..100] : formattingSessionId;
+            html.Append("</ol>");
+            orderedList.Clear();
+        }
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.Trim();
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                FlushParagraph();
+                FlushUnorderedList();
+                FlushOrderedList();
+                continue;
+            }
+
+            if (TryParseListItem(line, out var itemText, out var isOrdered))
+            {
+                FlushParagraph();
+                if (isOrdered)
+                {
+                    FlushUnorderedList();
+                    orderedList.Add(itemText);
+                }
+                else
+                {
+                    FlushOrderedList();
+                    unorderedList.Add(itemText);
+                }
+
+                continue;
+            }
+
+            FlushUnorderedList();
+            FlushOrderedList();
+            paragraph.Add(line);
+        }
+
+        FlushParagraph();
+        FlushUnorderedList();
+        FlushOrderedList();
+
+        return html.Length == 0
+            ? $"<p>{ApplyInlineFormatting(answerText.Trim())}</p>"
+            : html.ToString();
     }
 
     private static async Task<string> ReadResponseAsync(InvokeAgentRuntimeResponse response)
@@ -359,6 +410,65 @@ Answer:
         }
 
         return (actualSessionId, replyBuffer.ToString().Trim());
+    }
+
+    private static bool TryParseListItem(string line, out string itemText, out bool isOrdered)
+    {
+        var unorderedMatch = Regex.Match(line, @"^(?:[-*•]\s+)(.+)$");
+        if (unorderedMatch.Success)
+        {
+            itemText = unorderedMatch.Groups[1].Value.Trim();
+            isOrdered = false;
+            return true;
+        }
+
+        var orderedMatch = Regex.Match(line, @"^(?:\d+[\.\)]\s+)(.+)$");
+        if (orderedMatch.Success)
+        {
+            itemText = orderedMatch.Groups[1].Value.Trim();
+            isOrdered = true;
+            return true;
+        }
+
+        itemText = string.Empty;
+        isOrdered = false;
+        return false;
+    }
+
+    private static string ApplyInlineFormatting(string text)
+    {
+        var encoded = WebUtility.HtmlEncode(text);
+        encoded = Regex.Replace(encoded, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
+        encoded = Regex.Replace(encoded, @"\*(.+?)\*", "<em>$1</em>");
+        encoded = Regex.Replace(encoded, @"`(.+?)`", "<code>$1</code>");
+        encoded = Regex.Replace(
+            encoded,
+            @"(https?://[^\s<]+)",
+            match => $"<a href=\"{match.Value}\" target=\"_blank\" rel=\"noopener noreferrer\">{match.Value}</a>",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return encoded;
+    }
+
+    private static string NormalizeSessionId(string? sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return $"session{Guid.NewGuid():N}";
+        }
+
+        var normalized = sessionId.Trim();
+        if (normalized.Length < 33)
+        {
+            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized))).ToLowerInvariant();
+            normalized += hash[..(33 - normalized.Length)];
+        }
+
+        if (normalized.Length > 100)
+        {
+            normalized = normalized[..100];
+        }
+
+        return normalized;
     }
 
     private static async Task<string?> ProcessRuntimeStreamPayloadAsync(

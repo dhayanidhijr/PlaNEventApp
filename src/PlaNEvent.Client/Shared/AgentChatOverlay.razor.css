@@ -16,6 +16,10 @@
     letter-spacing: 0.01em;
 }
 
+.agent-thinking-block.is-formatting .agent-thinking-text {
+    color: #295ff0;
+}
+
 .agent-thinking-dots,
 .agent-loading-tail {
     display: inline-flex;
@@ -82,7 +86,7 @@
     color: inherit;
     white-space: normal;
     clip-path: inset(0 100% 0 0);
-    animation: sageHtmlReveal 1.05s linear forwards;
+    animation: sageHtmlReveal 0.26s linear forwards;
     pointer-events: none;
 }
 

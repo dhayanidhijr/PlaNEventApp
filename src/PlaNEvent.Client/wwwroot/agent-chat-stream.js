@@ -28,6 +28,14 @@
     }
 
     window.planeventAgentChat = {
+        scrollToBottom: function (elementId) {
+            const element = document.getElementById(elementId);
+            if (!element) {
+                return;
+            }
+
+            element.scrollTop = element.scrollHeight;
+        },
         stream: async function (url, token, request, dotNetRef) {
             const headers = {
                 "Content-Type": "application/json",

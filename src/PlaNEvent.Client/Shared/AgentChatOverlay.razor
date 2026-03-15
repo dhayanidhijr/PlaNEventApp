@@ -26,15 +26,15 @@
                 {
                     @foreach (var item in messages)
                     {
-                        <div class="agent-msg @(item.IsUser ? "user" : "agent") @(item.IsThinking ? "is-thinking" : string.Empty) @(item.IsStreaming ? "is-streaming" : string.Empty) @(item.IsHtmlTransitioning ? "is-html-transitioning" : string.Empty)">
+                        <div class="agent-msg @(item.IsUser ? "user" : "agent") @(item.IsThinking ? "is-thinking" : string.Empty) @(item.IsStreaming ? "is-streaming" : string.Empty) @(item.IsHtmlTransitioning ? "is-html-transitioning" : string.Empty) @(item.IsFormatting ? "is-formatting" : string.Empty)">
                             <div class="agent-msg-role">@(item.IsUser ? "You" : "Sage Response")</div>
                             @if (item.IsHtml)
                             {
                                 <div class="agent-msg-html">@((MarkupString)item.Text)</div>
                             }
-                            else if (item.IsThinking)
+                            else if (item.IsThinking || item.IsFormatting)
                             {
-                                <div class="agent-thinking-block" aria-live="polite" aria-label="Sage is thinking">
+                                <div class="agent-thinking-block @(item.IsFormatting ? "is-formatting" : string.Empty)" aria-live="polite" aria-label="@(item.IsFormatting ? "Sage is formatting" : "Sage is thinking")">
                                     <div class="agent-thinking-dots">
                                         <span></span>
                                         <span></span>
@@ -82,9 +82,11 @@
 
 @code {
     private const string ThinkingPlaceholder = "Sage is thinking...";
+    private const string FormattingPlaceholder = "Sage Formatting...";
     private string prompt = string.Empty;
     private bool isSending;
     private DotNetObjectReference<AgentChatOverlay>? streamReference;
+    private bool shouldAutoScroll;
 
     protected override void OnInitialized()
     {
@@ -93,7 +95,20 @@
 
     private IReadOnlyList<AgentChatOverlayState.ChatLine> messages => OverlayState.Messages;
 
-    private void OnOverlayChanged() => InvokeAsync(StateHasChanged);
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (shouldAutoScroll)
+        {
+            shouldAutoScroll = false;
+            await Js.InvokeVoidAsync("planeventAgentChat.scrollToBottom", "agent-chat-body");
+        }
+    }
+
+    private void OnOverlayChanged()
+    {
+        shouldAutoScroll = true;
+        _ = InvokeAsync(StateHasChanged);
+    }
 
     private void Close() => OverlayState.Close();
 
@@ -205,7 +220,8 @@
                         var htmlReply = htmlReplyElement.GetString() ?? string.Empty;
                         if (!string.IsNullOrWhiteSpace(htmlReply))
                         {
-                            OverlayState.BeginHtmlTransitionOnLastAgentMessage(htmlReply);
+                            OverlayState.SetLastAgentFormatting(FormattingPlaceholder);
+                            _ = StartHtmlTransitionAsync(htmlReply);
                             _ = FinalizeHtmlTransitionAsync(htmlReply);
                             return InvokeAsync(StateHasChanged);
                         }
@@ -241,7 +257,7 @@
 
     private async Task FinalizeHtmlTransitionAsync(string htmlText)
     {
-        await Task.Delay(1150);
+        await Task.Delay(320);
         await InvokeAsync(() =>
         {
             var last = OverlayState.GetLastMessage();
@@ -251,6 +267,21 @@
             }
 
             OverlayState.SetLastAgentMessage(htmlText, true);
+        });
+    }
+
+    private async Task StartHtmlTransitionAsync(string htmlText)
+    {
+        await Task.Delay(80);
+        await InvokeAsync(() =>
+        {
+            var last = OverlayState.GetLastMessage();
+            if (last is null || !last.IsFormatting)
+            {
+                return;
+            }
+
+            OverlayState.BeginHtmlTransitionOnLastAgentMessage(htmlText);
         });
     }
 }
