@@ -319,34 +319,16 @@ Answer:
                     continue;
                 }
 
-                var payload = sseBuffer.ToString();
+                var completion = await ProcessRuntimeStreamPayloadAsync(
+                    sseBuffer.ToString(),
+                    actualSessionId,
+                    replyBuffer,
+                    downstreamResponse,
+                    cancellationToken);
                 sseBuffer.Clear();
-
-                var streamedEvent = ParseRuntimeStreamEvent(payload, actualSessionId);
-                switch (streamedEvent.Kind)
+                if (completion is not null)
                 {
-                    case "delta":
-                        if (!string.IsNullOrWhiteSpace(streamedEvent.Delta))
-                        {
-                            replyBuffer.Append(streamedEvent.Delta);
-                            await WriteSseEventAsync(downstreamResponse, "delta", new
-                            {
-                                sessionId = actualSessionId,
-                                delta = streamedEvent.Delta
-                            }, cancellationToken);
-                        }
-
-                        break;
-                    case "complete":
-                        if (!string.IsNullOrWhiteSpace(streamedEvent.Reply))
-                        {
-                            replyBuffer.Clear();
-                            replyBuffer.Append(streamedEvent.Reply);
-                        }
-
-                        return (actualSessionId, replyBuffer.ToString().Trim());
-                    case "error":
-                        throw new InvalidOperationException(streamedEvent.Message ?? "Runtime stream failed.");
+                    return (actualSessionId, completion);
                 }
 
                 continue;
@@ -356,9 +338,69 @@ Answer:
             {
                 sseBuffer.AppendLine(line["data:".Length..].Trim());
             }
+            else
+            {
+                sseBuffer.AppendLine(line.Trim());
+            }
+        }
+
+        if (sseBuffer.Length > 0)
+        {
+            var completion = await ProcessRuntimeStreamPayloadAsync(
+                sseBuffer.ToString(),
+                actualSessionId,
+                replyBuffer,
+                downstreamResponse,
+                cancellationToken);
+            if (completion is not null)
+            {
+                return (actualSessionId, completion);
+            }
         }
 
         return (actualSessionId, replyBuffer.ToString().Trim());
+    }
+
+    private static async Task<string?> ProcessRuntimeStreamPayloadAsync(
+        string payload,
+        string sessionId,
+        StringBuilder replyBuffer,
+        HttpResponse downstreamResponse,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return null;
+        }
+
+        var streamedEvent = ParseRuntimeStreamEvent(payload, sessionId);
+        switch (streamedEvent.Kind)
+        {
+            case "delta":
+                if (!string.IsNullOrWhiteSpace(streamedEvent.Delta))
+                {
+                    replyBuffer.Append(streamedEvent.Delta);
+                    await WriteSseEventAsync(downstreamResponse, "delta", new
+                    {
+                        sessionId,
+                        delta = streamedEvent.Delta
+                    }, cancellationToken);
+                }
+
+                return null;
+            case "complete":
+                if (!string.IsNullOrWhiteSpace(streamedEvent.Reply))
+                {
+                    replyBuffer.Clear();
+                    replyBuffer.Append(streamedEvent.Reply);
+                }
+
+                return replyBuffer.ToString().Trim();
+            case "error":
+                throw new InvalidOperationException(streamedEvent.Message ?? "Runtime stream failed.");
+            default:
+                return null;
+        }
     }
 
     private static (string Kind, string? Delta, string? Reply, string? Message) ParseRuntimeStreamEvent(string payload, string sessionId)
