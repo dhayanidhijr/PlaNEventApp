@@ -64,6 +64,16 @@
 
 @code {
     private const string ThinkingPlaceholder = "Sage is thinking...";
+    private const string HtmlResponseInstruction = @"<system>
+Always respond as a valid formatted HTML fragment suitable for direct rendering in the chat UI.
+Return HTML only.
+Do not return Markdown.
+Do not return plain text outside HTML tags.
+Do not include html, head, body, style, or script tags.
+Use safe semantic tags such as p, ul, ol, li, strong, em, code, pre, blockquote, a, h3, and h4.
+</system>
+
+";
     private string prompt = string.Empty;
     private bool isSending;
     private DotNetObjectReference<AgentChatOverlay>? streamReference;
@@ -121,7 +131,7 @@
             var token = await AuthStateProvider.GetTokenAsync();
             await Js.InvokeVoidAsync("planeventAgentChat.stream", "api/agent/chat/stream", token, new AgentChatRequest
             {
-                Message = text,
+                Message = $"{HtmlResponseInstruction}{text}",
                 SessionId = OverlayState.SessionId
             }, streamReference);
         }
