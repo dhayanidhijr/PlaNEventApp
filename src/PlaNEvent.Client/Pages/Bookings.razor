@@ -114,9 +114,9 @@
     private int pageSize = 20;
     private int totalCount;
 
-    [SupplyParameterFromQuery] public DateTime? startDateQuery { get; set; }
-    [SupplyParameterFromQuery] public DateTime? endDateQuery { get; set; }
-    [SupplyParameterFromQuery] public int? occurrenceId { get; set; }
+    [SupplyParameterFromQuery(Name = "startDate")] public DateTime? startDateQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "endDate")] public DateTime? endDateQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "occurrenceId")] public int? occurrenceId { get; set; }
 
     protected override async Task OnParametersSetAsync()
     {
