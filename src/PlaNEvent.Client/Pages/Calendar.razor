@@ -3,118 +3,122 @@
 @inject ApiClient ApiClient
 @inject NavigationManager NavigationManager
 
-<div class="module-header">
-    <div>
-        <h1 class="page-title">Calendar Home</h1>
-        <p class="subtitle">Tree navigation, calendar views, and showcase entry points.</p>
-    </div>
-    <div class="d-flex gap-2">
-        <button class="btn btn-light" @onclick="OpenCategoryModal">Add Category</button>
-        <button class="btn btn-primary" @onclick="OpenOfferingWizard">Add Booking</button>
-    </div>
-</div>
-
-@if (!string.IsNullOrWhiteSpace(status))
-{
-    <div class="alert alert-info">@status</div>
-}
-
-<div class="calendar-shell">
-    <aside class="offerings-panel">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h3 class="mb-0">Categories & Offerings</h3>
-            <button class="btn btn-sm btn-outline-secondary" @onclick="ReloadAsync">Refresh</button>
+<div class="calendar-page">
+    <div class="module-header">
+        <div>
+            <h1 class="page-title">Calendar Home</h1>
+            <p class="subtitle">Tree navigation, calendar views, and showcase entry points.</p>
         </div>
-        <input class="form-control search-box" placeholder="Search tree" @bind="searchText" @bind:event="oninput" />
+        <div class="d-flex gap-2">
+            <button class="btn btn-light" @onclick="OpenCategoryModal">Add Category</button>
+            <button class="btn btn-primary" @onclick="OpenOfferingWizard">Add Booking</button>
+        </div>
+    </div>
 
-        <div class="tree-list mt-3">
-            @foreach (var row in VisibleRows())
+    @if (!string.IsNullOrWhiteSpace(status))
+    {
+        <div class="alert alert-info">@status</div>
+    }
+
+    <div class="calendar-shell">
+        <aside class="offerings-panel">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h3 class="mb-0">Categories & Offerings</h3>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ReloadAsync">Refresh</button>
+            </div>
+            <input class="form-control search-box" placeholder="Search tree" @bind="searchText" @bind:event="oninput" />
+
+            <div class="tree-list mt-3">
+                @foreach (var row in VisibleRows())
+                {
+                    <div class="tree-row @(selectedNodeType == row.NodeType && selectedNodeId == row.Id ? "selected" : string.Empty)" style="padding-left:@(8 + row.Level * 18)px">
+                        <span class="tree-toggle">@(row.NodeType == "category" ? ">" : ".")</span>
+                        <span class="tree-dot" style="background:@row.Color"></span>
+                        <button class="tree-label-btn" @onclick="() => SelectNode(row.NodeType, row.Id)">@row.Name</button>
+                        <button class="tree-menu-trigger" @onclick="() => EditNode(row.NodeType, row.Id)">Edit</button>
+                    </div>
+                }
+            </div>
+
+            <div class="d-grid gap-2 mt-3">
+                <button class="btn btn-light" @onclick="OpenCategoryModal">Add Category</button>
+                <button class="btn btn-primary" @onclick="OpenOfferingWizard">+ New Offering</button>
+                <button class="btn btn-outline-dark" @onclick="OpenShowcasePages">Manage Showcase Pages</button>
+            </div>
+        </aside>
+
+        <section class="calendar-board">
+            <div class="calendar-toolbar">
+                <div class="left-tools">
+                    <button class="btn btn-sm btn-light" @onclick="PrevRange">&lt;</button>
+                    <button class="btn btn-sm btn-light" @onclick="Today">Today</button>
+                    <button class="btn btn-sm btn-light" @onclick="NextRange">&gt;</button>
+                    <span class="range-label">@RangeLabel()</span>
+                </div>
+                <div class="view-switch">
+                    @foreach (var option in new[] { "list", "day", "week", "month", "year" })
+                    {
+                        <button class="view-link @(view == option ? "active" : string.Empty)" @onclick='() => SetView(option)'>@option</button>
+                    }
+                </div>
+            </div>
+
+            <div class="calendar-board-meta mb-3 d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>Selected:</strong>
+                    @if (selectedNodeId.HasValue)
+                    {
+                        <span>@SelectedNodeLabel()</span>
+                    }
+                    else
+                    {
+                        <span>All offerings</span>
+                    }
+                </div>
+                <div class="text-muted">Showcase pages: @pages.Count</div>
+            </div>
+
+            @if (view == "list")
             {
-                <div class="tree-row @(selectedNodeType == row.NodeType && selectedNodeId == row.Id ? "selected" : string.Empty)" style="padding-left:@(8 + row.Level * 18)px">
-                    <span class="tree-toggle">@(row.NodeType == "category" ? ">" : ".")</span>
-                    <span class="tree-dot" style="background:@row.Color"></span>
-                    <button class="tree-label-btn" @onclick="() => SelectNode(row.NodeType, row.Id)">@row.Name</button>
-                    <button class="tree-menu-trigger" @onclick="() => EditNode(row.NodeType, row.Id)">Edit</button>
+                <div class="list-view">
+                    @foreach (var item in FilteredOccurrences().OrderBy(x => x.Slots.FirstOrDefault()?.StartUtc))
+                    {
+                        <div class="list-item">
+                            <div>
+                                <strong>@item.Title</strong>
+                                <div class="muted">@item.Description</div>
+                                <div class="muted small">@item.RuleGroupName</div>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="tree-dot" style="background:@item.Color"></span>
+                                <span>@item.Slots.Count slot(s)</span>
+                            </div>
+                        </div>
+                    }
                 </div>
             }
-        </div>
-
-        <div class="d-grid gap-2 mt-3">
-            <button class="btn btn-light" @onclick="OpenCategoryModal">Add Category</button>
-            <button class="btn btn-primary" @onclick="OpenOfferingWizard">+ New Offering</button>
-            <button class="btn btn-outline-dark" @onclick="OpenShowcasePages">Manage Showcase Pages</button>
-        </div>
-    </aside>
-
-    <section class="calendar-board">
-        <div class="calendar-toolbar">
-            <div class="left-tools">
-                <button class="btn btn-sm btn-light" @onclick="PrevRange">&lt;</button>
-                <button class="btn btn-sm btn-light" @onclick="Today">Today</button>
-                <button class="btn btn-sm btn-light" @onclick="NextRange">&gt;</button>
-                <span class="range-label">@RangeLabel()</span>
-            </div>
-            <div class="view-switch">
-                @foreach (var option in new[] { "list", "day", "week", "month", "year" })
-                {
-                    <button class="view-link @(view == option ? "active" : string.Empty)" @onclick='() => SetView(option)'>@option</button>
-                }
-            </div>
-        </div>
-
-        <div class="mb-3 d-flex justify-content-between align-items-center">
-            <div>
-                <strong>Selected:</strong>
-                @if (selectedNodeId.HasValue)
-                {
-                    <span>@SelectedNodeLabel()</span>
-                }
-                else
-                {
-                    <span>All offerings</span>
-                }
-            </div>
-            <div class="text-muted">Showcase pages: @pages.Count</div>
-        </div>
-
-        @if (view == "list")
-        {
-            <div class="list-view">
-                @foreach (var item in FilteredOccurrences().OrderBy(x => x.Slots.FirstOrDefault()?.StartUtc))
-                {
-                    <div class="list-item">
-                        <div>
-                            <strong>@item.Title</strong>
-                            <div class="muted">@item.Description</div>
-                            <div class="muted small">@item.RuleGroupName</div>
-                        </div>
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="tree-dot" style="background:@item.Color"></span>
-                            <span>@item.Slots.Count slot(s)</span>
-                        </div>
+            else
+            {
+                <div class="calendar-grid-shell">
+                    <div class="week-head">
+                        <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
                     </div>
-                }
-            </div>
-        }
-        else
-        {
-            <div class="week-head">
-                <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
-            </div>
-            <div class="month-grid">
-                @foreach (var day in DaysInView())
-                {
-                    <div class="day-cell @(day.Date == DateTime.UtcNow.Date ? "today" : string.Empty)">
-                        <div class="day-num">@day.Day</div>
-                        @foreach (var evt in EventsForDay(day))
+                    <div class="month-grid">
+                        @foreach (var day in DaysInView())
                         {
-                            <div class="event-chip" style="background:@evt.Color" title="@evt.Label">@evt.Label</div>
+                            <div class="day-cell @(day.Date == DateTime.UtcNow.Date ? "today" : string.Empty)">
+                                <div class="day-num">@day.Day</div>
+                                @foreach (var evt in EventsForDay(day))
+                                {
+                                    <div class="event-chip" style="background:@evt.Color" title="@evt.Label">@evt.Label</div>
+                                }
+                            </div>
                         }
                     </div>
-                }
-            </div>
-        }
-    </section>
+                </div>
+            }
+        </section>
+    </div>
 </div>
 
 @if (showCategoryModal)

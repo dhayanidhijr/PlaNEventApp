@@ -700,7 +700,7 @@ code {
 }
 /* Agent chat overlay */
 .agent-chat-overlay {
-    position: fixed;
+    position: absolute;
     inset: 0;
     z-index: 2400;
     background: var(--app-overlay);
@@ -710,7 +710,7 @@ code {
 
 .agent-chat-panel {
     width: min(520px, 94vw);
-    height: 100vh;
+    height: 100%;
     background: var(--sage-surface);
     color: var(--sage-text);
     border-left: 1px solid var(--sage-border);
