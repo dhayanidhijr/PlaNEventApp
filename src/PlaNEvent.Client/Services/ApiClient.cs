@@ -24,32 +24,6 @@ public sealed class ApiClient(HttpClient httpClient, TokenAuthenticationStatePro
         return await httpClient.GetFromJsonAsync<List<OccurrenceDto>>(query) ?? new List<OccurrenceDto>();
     }
 
-    public async Task<bool> CreateOccurrenceAsync(CreateOccurrenceRequest request)
-    {
-        await AttachTokenAsync();
-        var response = await httpClient.PostAsJsonAsync("api/occurrences", request);
-        return response.IsSuccessStatusCode;
-    }
-
-    public async Task<OccurrenceDto?> CreateOccurrenceDetailedAsync(CreateOccurrenceRequest request)
-    {
-        await AttachTokenAsync();
-        var response = await httpClient.PostAsJsonAsync("api/occurrences", request);
-        if (!response.IsSuccessStatusCode)
-        {
-            return null;
-        }
-
-        return await response.Content.ReadFromJsonAsync<OccurrenceDto>();
-    }
-
-    public async Task<bool> PublishOccurrenceAsync(int id)
-    {
-        await AttachTokenAsync();
-        var response = await httpClient.PutAsync($"api/occurrences/{id}/publish", null);
-        return response.IsSuccessStatusCode;
-    }
-
     public async Task<List<EventGroupDto>> GroupsAsync()
     {
         await AttachTokenAsync();

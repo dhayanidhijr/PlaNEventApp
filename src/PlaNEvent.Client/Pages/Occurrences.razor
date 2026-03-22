@@ -2,126 +2,72 @@
 @attribute [Authorize]
 @inject ApiClient ApiClient
 
-<h1>Occurrence Management</h1>
-
-<EditForm Model="model" OnValidSubmit="CreateOccurrence">
-    <div class="mb-2">
-        <label>Title</label>
-        <InputText class="form-control" @bind-Value="model.Title" />
+<div class="module-header">
+    <div>
+        <h1 class="page-title">Generated Occurrences</h1>
+        <p class="subtitle">Occurrences are created from offering rule groups and timeslots. Edit an offering to change what appears here.</p>
     </div>
-    <div class="mb-2">
-        <label>Description</label>
-        <InputText class="form-control" @bind-Value="model.Description" />
-    </div>
-    <div class="mb-2">
-        <label>Repeat Until (optional UTC)</label>
-        <InputDate class="form-control" @bind-Value="model.RepeatUntilUtc" />
-    </div>
-    <div class="form-check mb-2">
-        <InputCheckbox class="form-check-input" @bind-Value="model.PublishOnCreate" />
-        <label class="form-check-label">Publish for Sale</label>
-    </div>
-
-    <h5>Slots</h5>
-    @foreach (var slot in model.Slots)
-    {
-        <div class="row g-2 mb-2">
-            <div class="col-md-5">
-                <InputDate class="form-control" @bind-Value="slot.StartUtc" />
-            </div>
-            <div class="col-md-5">
-                <InputDate class="form-control" @bind-Value="slot.EndUtc" />
-            </div>
-            <div class="col-md-2">
-                <button class="btn btn-outline-danger w-100" type="button" @onclick="() => RemoveSlot(slot)">Remove</button>
-            </div>
-        </div>
-    }
-
-    <button class="btn btn-secondary me-2" type="button" @onclick="AddSlot">Add Slot</button>
-    <button class="btn btn-primary" type="submit">Create Occurrence</button>
-</EditForm>
+</div>
 
 @if (!string.IsNullOrWhiteSpace(status))
 {
-    <p class="mt-2">@status</p>
+    <div class="alert alert-info">@status</div>
 }
 
-<h2 class="mt-4">Existing Occurrences</h2>
-<table class="table">
-    <thead>
-        <tr>
-            <th>Title</th>
-            <th>Published</th>
-            <th></th>
-        </tr>
-    </thead>
-    <tbody>
-    @foreach (var occurrence in occurrences)
-    {
-        <tr>
-            <td>@occurrence.Title</td>
-            <td>@occurrence.IsPublished</td>
-            <td>
-                @if (!occurrence.IsPublished)
-                {
-                    <button class="btn btn-sm btn-outline-primary" @onclick="() => Publish(occurrence.Id)">Publish</button>
-                }
-            </td>
-        </tr>
-    }
-    </tbody>
-</table>
+<div class="card">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4 class="mb-0">Occurrence List</h4>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="Reload">Refresh</button>
+        </div>
+
+        @if (occurrences.Count == 0)
+        {
+            <p class="text-muted mb-0">No generated occurrences found. Create or update an offering first.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Offering</th>
+                            <th>Rule Group</th>
+                            <th>First Slot</th>
+                            <th>Slot Count</th>
+                            <th>Published</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var occurrence in occurrences)
+                    {
+                        var firstSlot = occurrence.Slots.OrderBy(x => x.StartUtc).FirstOrDefault();
+                        <tr>
+                            <td>@(occurrence.OfferingName ?? occurrence.Title)</td>
+                            <td>@(occurrence.RuleGroupName ?? "-")</td>
+                            <td>@(firstSlot is null ? "-" : $"{firstSlot.StartUtc.ToLocalTime():MMM dd yyyy hh:mm tt}")</td>
+                            <td>@occurrence.Slots.Count</td>
+                            <td>@(occurrence.IsPublished ? "Yes" : "No")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
 
 @code {
-    private CreateOccurrenceRequest model = new()
-    {
-        Slots = new List<SlotInputDto>
-        {
-            new()
-            {
-                StartUtc = DateTime.UtcNow.Date,
-                EndUtc = DateTime.UtcNow.Date.AddHours(1)
-            }
-        }
-    };
-
     private List<OccurrenceDto> occurrences = new();
-    private string? status;
+    private string? status = "Occurrences are generated from offerings. Manual occurrence creation is disabled.";
 
     protected override async Task OnInitializedAsync()
     {
-        occurrences = await ApiClient.OccurrencesAsync();
+        await Reload();
     }
 
-    private void AddSlot()
+    private async Task Reload()
     {
-        model.Slots.Add(new SlotInputDto
-        {
-            StartUtc = DateTime.UtcNow.Date,
-            EndUtc = DateTime.UtcNow.Date.AddHours(1)
-        });
-    }
-
-    private void RemoveSlot(SlotInputDto slot)
-    {
-        if (model.Slots.Count <= 1)
-        {
-            return;
-        }
-
-        model.Slots.Remove(slot);
-    }
-
-    private async Task CreateOccurrence()
-    {
-        status = (await ApiClient.CreateOccurrenceAsync(model)) ? "Occurrence created." : "Failed to create occurrence.";
-        occurrences = await ApiClient.OccurrencesAsync();
-    }
-
-    private async Task Publish(int id)
-    {
-        status = (await ApiClient.PublishOccurrenceAsync(id)) ? "Occurrence published." : "Failed to publish.";
         occurrences = await ApiClient.OccurrencesAsync();
     }
 }

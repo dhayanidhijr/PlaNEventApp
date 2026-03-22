@@ -12,7 +12,7 @@ namespace PlaNEvent.Api.Controllers;
 [ApiController]
 [Route("api/occurrences")]
 [Authorize]
-public sealed class OccurrencesController(AppDbContext dbContext, IActivityService activityService) : ControllerBase
+public sealed class OccurrencesController(AppDbContext dbContext) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyCollection<OccurrenceDto>>> List([FromQuery] DateTime? startUtc, [FromQuery] DateTime? endUtc)
@@ -36,87 +36,22 @@ public sealed class OccurrencesController(AppDbContext dbContext, IActivityServi
     }
 
     [HttpPost]
-    public async Task<ActionResult<OccurrenceDto>> Create(CreateOccurrenceRequest request, CancellationToken cancellationToken)
+    public ActionResult<OccurrenceDto> Create(CreateOccurrenceRequest request, CancellationToken cancellationToken)
     {
-        if (request.Slots.Count == 0)
-        {
-            return BadRequest("At least one slot is required.");
-        }
-
-        var occurrence = new Occurrence
-        {
-            OwnerId = CurrentUserId(),
-            Title = request.Title,
-            Description = request.Description,
-            EventGroupId = request.EventGroupId,
-            StaffId = request.StaffId,
-            IsPublished = request.PublishOnCreate,
-            Color = "#2f80ff"
-        };
-
-        foreach (var slot in ExpandSlots(request))
-        {
-            occurrence.Slots.Add(new OccurrenceSlot { StartUtc = slot.StartUtc, EndUtc = slot.EndUtc });
-        }
-
-        dbContext.Occurrences.Add(occurrence);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await activityService.LogAsync(CurrentUserId(), "occurrence.create", occurrence.Title, cancellationToken);
-
-        await dbContext.Entry(occurrence).Reference(x => x.EventGroup).LoadAsync(cancellationToken);
-        await dbContext.Entry(occurrence).Reference(x => x.Staff).LoadAsync(cancellationToken);
-        await dbContext.Entry(occurrence).Reference(x => x.Offering).LoadAsync(cancellationToken);
-        await dbContext.Entry(occurrence).Reference(x => x.RuleGroup).LoadAsync(cancellationToken);
-
-        return Ok(Map(occurrence));
+        _ = request;
+        _ = cancellationToken;
+        return BadRequest("Occurrences are generated from offerings. Create or edit an offering to update its occurrences.");
     }
 
     [HttpPut("{id}/publish")]
-    public async Task<IActionResult> Publish(int id, CancellationToken cancellationToken)
+    public IActionResult Publish(int id, CancellationToken cancellationToken)
     {
-        var occurrence = await dbContext.Occurrences.FirstOrDefaultAsync(x => x.Id == id && x.OwnerId == CurrentUserId(), cancellationToken);
-        if (occurrence is null)
-        {
-            return NotFound();
-        }
-
-        occurrence.IsPublished = true;
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await activityService.LogAsync(CurrentUserId(), "occurrence.publish", occurrence.Title, cancellationToken);
-
-        return NoContent();
+        _ = id;
+        _ = cancellationToken;
+        return BadRequest("Occurrence publish state follows the offering. Update the offering instead.");
     }
 
     private string CurrentUserId() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
-
-    private static IEnumerable<SlotInputDto> ExpandSlots(CreateOccurrenceRequest request)
-    {
-        if (!request.RepeatUntilUtc.HasValue)
-        {
-            return request.Slots;
-        }
-
-        var list = new List<SlotInputDto>();
-        var endDate = request.RepeatUntilUtc.Value.Date;
-        foreach (var slot in request.Slots)
-        {
-            var day = slot.StartUtc.Date;
-            while (day <= endDate)
-            {
-                var duration = slot.EndUtc - slot.StartUtc;
-                var start = day + slot.StartUtc.TimeOfDay;
-                list.Add(new SlotInputDto
-                {
-                    StartUtc = DateTime.SpecifyKind(start, DateTimeKind.Utc),
-                    EndUtc = DateTime.SpecifyKind(start + duration, DateTimeKind.Utc)
-                });
-
-                day = day.AddDays(1);
-            }
-        }
-
-        return list;
-    }
 
     private static OccurrenceDto Map(Occurrence occurrence)
         => new()
