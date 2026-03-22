@@ -293,6 +293,19 @@ public sealed class CalendarManagementController(
     [HttpPost("showcase-pages")]
     public async Task<ActionResult<ShowcasePageEditorDto>> SaveShowcasePage(SaveShowcasePageRequest request, CancellationToken cancellationToken)
     {
+        var validSourceTypes = new[] { "category", "offering" };
+        var validCarouselTypes = new[] { "carousel", "rail" };
+        var invalidItem = request.Items.FirstOrDefault(x =>
+            string.IsNullOrWhiteSpace(x.SourceType) ||
+            string.IsNullOrWhiteSpace(x.CarouselType) ||
+            !validSourceTypes.Contains(x.SourceType, StringComparer.OrdinalIgnoreCase) ||
+            !validCarouselTypes.Contains(x.CarouselType, StringComparer.OrdinalIgnoreCase));
+
+        if (invalidItem is not null)
+        {
+            return BadRequest("Each booking data row must include both Source Type and Carousel Type.");
+        }
+
         var ownerId = CurrentUserId();
         ShowcasePage page;
         if (request.Id.HasValue)

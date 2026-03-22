@@ -78,6 +78,7 @@
                             <div class="col-md-3">
                                 <label>Source Type</label>
                                 <select class="form-select" @bind="item.SourceType">
+                                    <option value="">Select source type</option>
                                     <option value="category">Category</option>
                                     <option value="offering">Offering</option>
                                 </select>
@@ -85,6 +86,7 @@
                             <div class="col-md-3">
                                 <label>Carousel Type</label>
                                 <select class="form-select" @bind="item.CarouselType">
+                                    <option value="">Select carousel type</option>
                                     <option value="carousel">Carousel</option>
                                     <option value="rail">Rail</option>
                                 </select>
@@ -195,8 +197,8 @@
     {
         editor.Items.Add(new ShowcasePageItemDto
         {
-            SourceType = "category",
-            CarouselType = "carousel",
+            SourceType = string.Empty,
+            CarouselType = string.Empty,
             ShowDescription = true,
             IsActive = true,
             SortOrder = editor.Items.Count
@@ -207,6 +209,12 @@
 
     private async Task SavePage()
     {
+        if (editor.Items.Any(x => string.IsNullOrWhiteSpace(x.SourceType) || string.IsNullOrWhiteSpace(x.CarouselType)))
+        {
+            status = "Each booking data row must have both Source Type and Carousel Type selected.";
+            return;
+        }
+
         var saved = await ApiClient.SaveShowcasePageAsync(new SaveShowcasePageRequest
         {
             Id = editor.Id == 0 ? null : editor.Id,
