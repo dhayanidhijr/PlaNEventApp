@@ -15,8 +15,8 @@ else
         <dd>@profile.DisplayName</dd>
         <dt>Email</dt>
         <dd>@profile.Email</dd>
-        <dt>Public Sales URL</dt>
-        <dd><a href="@($"/sale/{profile.PublicSlug}")">@($"/sale/{profile.PublicSlug}")</a></dd>
+        <dt>Public Showcase URL</dt>
+        <dd><a href="@($"/showcase/{profile.PublicSlug}")">@($"/showcase/{profile.PublicSlug}")</a></dd>
         <dt>Roles</dt>
         <dd>@string.Join(", ", profile.Roles)</dd>
     </dl>
