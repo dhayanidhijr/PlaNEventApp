@@ -58,7 +58,8 @@ public sealed class AgentCoreChatService(
 
         try
         {
-            var firstPass = await InvokeAndExtractAsync(request.Message, sessionId, cancellationToken);
+            var runtimePrompt = await BuildRuntimePromptAsync(request.Message, cancellationToken);
+            var firstPass = await InvokeAndExtractAsync(runtimePrompt, sessionId, cancellationToken);
             var html = string.IsNullOrWhiteSpace(firstPass.Reply) ? "<p><em>No response from agent.</em></p>" : firstPass.Reply.Trim();
             return await BuildChatResponseAsync(request, firstPass.SessionId, html, cancellationToken);
         }
@@ -99,7 +100,8 @@ public sealed class AgentCoreChatService(
 
         try
         {
-            var streamResult = await StreamFromRuntimeAsync(request.Message, sessionId, response, cancellationToken);
+            var runtimePrompt = await BuildRuntimePromptAsync(request.Message, cancellationToken);
+            var streamResult = await StreamFromRuntimeAsync(runtimePrompt, sessionId, response, cancellationToken);
             var htmlReply = string.IsNullOrWhiteSpace(streamResult.Reply) ? "<p><em>No response from agent.</em></p>" : streamResult.Reply.Trim();
             var responsePayload = await BuildChatResponseAsync(request, streamResult.SessionId, htmlReply, cancellationToken);
             await WriteSseEventAsync(response, "complete", responsePayload, cancellationToken);
@@ -108,7 +110,8 @@ public sealed class AgentCoreChatService(
         {
             try
             {
-                var result = await InvokeAndExtractAsync(request.Message, sessionId, cancellationToken);
+                var runtimePrompt = await BuildRuntimePromptAsync(request.Message, cancellationToken);
+                var result = await InvokeAndExtractAsync(runtimePrompt, sessionId, cancellationToken);
                 var htmlReply = string.IsNullOrWhiteSpace(result.Reply) ? "<p><em>No response from agent.</em></p>" : result.Reply.Trim();
                 var responsePayload = await BuildChatResponseAsync(request, result.SessionId, htmlReply, cancellationToken);
 
@@ -205,6 +208,52 @@ public sealed class AgentCoreChatService(
                     .ToArray() ?? Array.Empty<string>()
             }
         });
+    }
+
+    private async Task<string> BuildRuntimePromptAsync(string prompt, CancellationToken cancellationToken)
+    {
+        var ownerId = CurrentUserId();
+        if (string.IsNullOrWhiteSpace(ownerId))
+        {
+            return prompt;
+        }
+
+        var settings = await dbContext.SageGoalSettings
+            .AsNoTracking()
+            .Include(x => x.Features.OrderBy(f => f.SortOrder).ThenBy(f => f.Id))
+            .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
+
+        if (settings is null)
+        {
+            return prompt;
+        }
+
+        var summaryLines = new List<string>
+        {
+            "This facility has saved business guidance you should use when suggesting offerings, showcase pages, and promotional booking strategies.",
+            $"Facility business summary: {settings.FacilityBusinessSummary}",
+            $"Expected monthly booking count target: {settings.ExpectedMonthlyBookingCount}",
+            $"Expected monthly sales amount target: {settings.ExpectedMonthlySalesAmount:0.##}"
+        };
+
+        if (settings.Features.Count > 0)
+        {
+            summaryLines.Add("Feature targets:");
+            summaryLines.AddRange(settings.Features
+                .OrderBy(x => x.SortOrder)
+                .Select(x => $"- {x.Name}: target share {x.TargetSharePercent:0.##}%, expected bookings {x.ExpectedMonthlyBookingCount}, expected sales {x.ExpectedMonthlySalesAmount:0.##}"));
+        }
+
+        var facilityContext = string.Join("\n", summaryLines.Where(x => !string.IsNullOrWhiteSpace(x)));
+        return $"""
+            <system>
+            {facilityContext}
+            Use this context when you recommend or create showcase events so the plan helps meet or exceed the saved targets.
+            When discussing facility strategy, tie your recommendations back to these goals explicitly.
+            </system>
+
+            {prompt}
+            """;
     }
 
     private string? GetForwardedAccessToken()

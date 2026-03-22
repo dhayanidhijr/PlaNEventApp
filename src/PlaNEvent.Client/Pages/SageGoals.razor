@@ -1,0 +1,172 @@
+@page "/sage-goals"
+@attribute [Authorize]
+@inject ApiClient ApiClient
+
+<div class="module-header">
+    <div>
+        <h1 class="page-title">Sage Goal Settings</h1>
+        <p class="subtitle">Capture your facility business goals so Sage can recommend showcase events and promotions that support your monthly targets.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(status))
+{
+    <div class="alert @(saveSucceeded ? "alert-success" : "alert-info")">@status</div>
+}
+
+@if (model is null)
+{
+    <div class="card">
+        <div class="card-body">
+            <p class="mb-0">Loading Sage goal settings...</p>
+        </div>
+    </div>
+}
+else
+{
+    <div class="card mb-4">
+        <div class="card-body">
+            <h4 class="mb-3">Facility Context</h4>
+            <div class="mb-3">
+                <label class="form-label">Describe The Facility Business</label>
+                <InputTextArea class="form-control" @bind-Value="model.FacilityBusinessSummary" rows="6" />
+                <div class="form-text">This summary is included in Sage's facility context so the agent understands what your business offers and how it should position events.</div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Expected Monthly Booking Count</label>
+                    <InputNumber class="form-control" @bind-Value="model.ExpectedMonthlyBookingCount" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Expected Monthly Sales Amount</label>
+                    <InputNumber class="form-control" @bind-Value="model.ExpectedMonthlySalesAmount" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                <div>
+                    <h4 class="mb-0">Feature Targets</h4>
+                    <p class="text-muted mb-0">List what the facility offers and the share of the monthly target Sage should try to drive through each feature.</p>
+                </div>
+                <button type="button" class="btn btn-outline-primary" @onclick="AddFeature">Add Feature</button>
+            </div>
+
+            @if (model.Features.Count == 0)
+            {
+                <p class="text-muted mb-3">No feature targets added yet.</p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead>
+                            <tr>
+                                <th>Feature</th>
+                                <th>Expected Bookings</th>
+                                <th>Expected Sales</th>
+                                <th>Target Share %</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var index = 0; index < model.Features.Count; index++)
+                            {
+                                var feature = model.Features[index];
+                                <tr>
+                                    <td>
+                                        <InputText class="form-control" @bind-Value="feature.Name" placeholder="Gym, Pool, Sauna, Aerobics..." />
+                                    </td>
+                                    <td>
+                                        <InputNumber class="form-control" @bind-Value="feature.ExpectedMonthlyBookingCount" />
+                                    </td>
+                                    <td>
+                                        <InputNumber class="form-control" @bind-Value="feature.ExpectedMonthlySalesAmount" />
+                                    </td>
+                                    <td>
+                                        <InputNumber class="form-control" @bind-Value="feature.TargetSharePercent" />
+                                    </td>
+                                    <td class="text-end">
+                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => RemoveFeature(index)">Remove</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="text-muted">
+                    Total target share allocation: @TotalTargetShare().ToString("0.##")%
+                </div>
+                <button type="button" class="btn btn-primary" @onclick="SaveAsync">Save Sage Goal Settings</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private SageGoalSettingsDto? model;
+    private string? status;
+    private bool saveSucceeded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        model = await ApiClient.SageGoalSettingsAsync() ?? new SageGoalSettingsDto();
+    }
+
+    private void AddFeature()
+    {
+        model?.Features.Add(new SageGoalFeatureDto
+        {
+            TargetSharePercent = 0
+        });
+    }
+
+    private void RemoveFeature(int index)
+    {
+        if (model is null || index < 0 || index >= model.Features.Count)
+        {
+            return;
+        }
+
+        model.Features.RemoveAt(index);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (model is null)
+        {
+            return;
+        }
+
+        model.Features = model.Features
+            .Where(x => !string.IsNullOrWhiteSpace(x.Name))
+            .Select((x, index) =>
+            {
+                x.SortOrder = index;
+                return x;
+            })
+            .ToList();
+
+        var saved = await ApiClient.SaveSageGoalSettingsAsync(model);
+        if (saved is null)
+        {
+            saveSucceeded = false;
+            status = "Sage goal settings could not be saved.";
+            return;
+        }
+
+        model = saved;
+        saveSucceeded = true;
+        status = "Sage goal settings saved successfully.";
+    }
+
+    private decimal TotalTargetShare()
+        => model?.Features.Sum(x => x.TargetSharePercent) ?? 0;
+}

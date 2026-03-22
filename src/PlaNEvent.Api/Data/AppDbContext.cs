@@ -18,6 +18,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<OccurrenceSlot> OccurrenceSlots => Set<OccurrenceSlot>();
     public DbSet<Booking> Bookings => Set<Booking>();
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+    public DbSet<SageGoalSettings> SageGoalSettings => Set<SageGoalSettings>();
+    public DbSet<SageGoalFeature> SageGoalFeatures => Set<SageGoalFeature>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -96,5 +98,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             .WithMany()
             .HasForeignKey(x => x.OccurrenceSlotId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<SageGoalSettings>()
+            .HasIndex(x => x.OwnerId)
+            .IsUnique();
+
+        builder.Entity<SageGoalSettings>()
+            .HasMany(x => x.Features)
+            .WithOne(x => x.SageGoalSettings)
+            .HasForeignKey(x => x.SageGoalSettingsId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }
