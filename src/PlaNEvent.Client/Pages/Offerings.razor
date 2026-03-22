@@ -202,11 +202,11 @@
                                         </div>
                                         <div class="col-md-3">
                                             <label>Start Time</label>
-                                            <InputText class="form-control" @bind-Value="timeslotStartInputs[timeslot]" />
+                                            <input class="form-control" value="@GetTimeslotStartInput(timeslot)" @oninput="args => SetTimeslotStartInput(timeslot, args.Value?.ToString())" />
                                         </div>
                                         <div class="col-md-3">
                                             <label>End Time</label>
-                                            <InputText class="form-control" @bind-Value="timeslotEndInputs[timeslot]" />
+                                            <input class="form-control" value="@GetTimeslotEndInput(timeslot)" @oninput="args => SetTimeslotEndInput(timeslot, args.Value?.ToString())" />
                                         </div>
                                         <div class="col-md-2 form-check ms-2">
                                             <InputCheckbox class="form-check-input" @bind-Value="timeslot.RepeatGeneratedSlots" />
@@ -218,7 +218,7 @@
                                         </div>
                                         <div class="col-md-3">
                                             <label>Until Last Start</label>
-                                            <InputText class="form-control" @bind-Value="timeslotRepeatUntilInputs[timeslot]" />
+                                            <input class="form-control" value="@GetTimeslotRepeatUntilInput(timeslot)" @oninput="args => SetTimeslotRepeatUntilInput(timeslot, args.Value?.ToString())" />
                                         </div>
                                         <div class="col-md-2">
                                             <button class="btn btn-outline-danger w-100" @onclick="() => RemoveTimeslot(ruleGroup, timeslot)">Remove</button>
@@ -420,6 +420,24 @@
         timeslotEndInputs[timeslot] = timeslot.EndTime.ToString(@"hh\:mm");
         timeslotRepeatUntilInputs[timeslot] = timeslot.RepeatUntilLastStartTime?.ToString(@"hh\:mm") ?? string.Empty;
     }
+
+    private string GetTimeslotStartInput(TimeslotEditorDto timeslot)
+        => timeslotStartInputs.GetValueOrDefault(timeslot, timeslot.StartTime.ToString(@"hh\:mm"));
+
+    private string GetTimeslotEndInput(TimeslotEditorDto timeslot)
+        => timeslotEndInputs.GetValueOrDefault(timeslot, timeslot.EndTime.ToString(@"hh\:mm"));
+
+    private string GetTimeslotRepeatUntilInput(TimeslotEditorDto timeslot)
+        => timeslotRepeatUntilInputs.GetValueOrDefault(timeslot, timeslot.RepeatUntilLastStartTime?.ToString(@"hh\:mm") ?? string.Empty);
+
+    private void SetTimeslotStartInput(TimeslotEditorDto timeslot, string? value)
+        => timeslotStartInputs[timeslot] = value ?? string.Empty;
+
+    private void SetTimeslotEndInput(TimeslotEditorDto timeslot, string? value)
+        => timeslotEndInputs[timeslot] = value ?? string.Empty;
+
+    private void SetTimeslotRepeatUntilInput(TimeslotEditorDto timeslot, string? value)
+        => timeslotRepeatUntilInputs[timeslot] = value ?? string.Empty;
 
     private void ApplyTimeslotInputs()
     {
