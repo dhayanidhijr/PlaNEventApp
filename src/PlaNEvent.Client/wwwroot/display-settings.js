@@ -19,7 +19,6 @@ window.planeventDisplay = {
         document.documentElement.setAttribute("data-theme", safeTheme);
         document.documentElement.style.setProperty("--app-scale-factor", zoomFactor.toString());
         document.documentElement.style.setProperty("--app-scale-percent", safeScalePercent.toString());
-        document.body.style.zoom = zoomFactor.toString();
 
         localStorage.setItem("planevent.theme", safeTheme);
         localStorage.setItem("planevent.scalePercent", safeScalePercent.toString());

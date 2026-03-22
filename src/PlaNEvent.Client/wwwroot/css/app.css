@@ -96,6 +96,25 @@ html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     background: var(--app-bg);
     color: var(--app-text);
+    min-width: 100%;
+    min-height: 100%;
+    overflow: auto;
+}
+
+body {
+    margin: 0;
+}
+
+#app {
+    min-height: 100vh;
+}
+
+.app-scale-root {
+    width: calc(100vw / var(--app-scale-factor));
+    min-width: calc(100vw / var(--app-scale-factor));
+    min-height: calc(100vh / var(--app-scale-factor));
+    transform: scale(var(--app-scale-factor));
+    transform-origin: top left;
 }
 
 body,

@@ -4,52 +4,54 @@
 @inject PlaNEvent.Client.Services.DisplaySettingsService DisplaySettings
 @implements IDisposable
 
-<div class="app-shell">
-    <aside class="app-sidebar">
-        <NavMenu />
-    </aside>
+<div class="app-scale-root">
+    <div class="app-shell">
+        <aside class="app-sidebar">
+            <NavMenu />
+        </aside>
 
-    <main class="app-main">
-        <header class="app-topbar px-4">
-            <div class="app-topbar-left">
-                <span>@CurrentTime.ToString("MMMM dd, yyyy")</span>
-                <span>@CurrentTime.ToString("hh:mm:ss tt")</span>
-                <span>@CurrentTimeZoneDisplay</span>
-            </div>
-            <div class="app-topbar-right">
-                <select class="form-select form-select-sm app-timezone-select" value="@selectedTimeZoneId" @onchange="OnTimeZoneChanged">
-                    @foreach (var timeZone in TimeZoneOptions)
-                    {
-                        <option value="@timeZone.Id">@timeZone.Label</option>
-                    }
-                </select>
-                <select class="form-select form-select-sm app-theme-select" value="@DisplaySettings.Theme" @onchange="OnThemeChanged">
-                    <option value="light">Light</option>
-                    <option value="dark">Dark</option>
-                    <option value="grayscale">Grayscale</option>
-                    <option value="color">Color</option>
-                </select>
-                <select class="form-select form-select-sm app-scale-select" value="@DisplaySettings.ScalePercent" @onchange="OnScaleChanged">
-                    @foreach (var scaleOption in ScaleOptions)
-                    {
-                        <option value="@scaleOption">@($"{scaleOption}%")</option>
-                    }
-                </select>
-                <AuthorizeView>
-                    <Authorized>
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="SignOut">Sign Out</button>
-                    </Authorized>
-                </AuthorizeView>
-            </div>
-        </header>
+        <main class="app-main">
+            <header class="app-topbar px-4">
+                <div class="app-topbar-left">
+                    <span>@CurrentTime.ToString("MMMM dd, yyyy")</span>
+                    <span>@CurrentTime.ToString("hh:mm:ss tt")</span>
+                    <span>@CurrentTimeZoneDisplay</span>
+                </div>
+                <div class="app-topbar-right">
+                    <select class="form-select form-select-sm app-timezone-select" value="@selectedTimeZoneId" @onchange="OnTimeZoneChanged">
+                        @foreach (var timeZone in TimeZoneOptions)
+                        {
+                            <option value="@timeZone.Id">@timeZone.Label</option>
+                        }
+                    </select>
+                    <select class="form-select form-select-sm app-theme-select" value="@DisplaySettings.Theme" @onchange="OnThemeChanged">
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                        <option value="grayscale">Grayscale</option>
+                        <option value="color">Color</option>
+                    </select>
+                    <select class="form-select form-select-sm app-scale-select" value="@DisplaySettings.ScalePercent" @onchange="OnScaleChanged">
+                        @foreach (var scaleOption in ScaleOptions)
+                        {
+                            <option value="@scaleOption">@($"{scaleOption}%")</option>
+                        }
+                    </select>
+                    <AuthorizeView>
+                        <Authorized>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="SignOut">Sign Out</button>
+                        </Authorized>
+                    </AuthorizeView>
+                </div>
+            </header>
 
-        <article class="app-content px-4">
-            @Body
-        </article>
-    </main>
+            <article class="app-content px-4">
+                @Body
+            </article>
+        </main>
+    </div>
+
+    <AgentChatOverlay />
 </div>
-
-<AgentChatOverlay />
 
 @code {
     private string selectedTimeZoneId = "America/New_York";
