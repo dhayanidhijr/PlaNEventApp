@@ -2,39 +2,420 @@
 @attribute [Authorize]
 @inject ApiClient ApiClient
 
-<h1>Staff Management</h1>
-
-<EditForm Model="model" OnValidSubmit="Create">
-    <div class="mb-2">
-        <label>Name</label>
-        <InputText class="form-control" @bind-Value="model.Name" />
+<div class="staff-page">
+    <div class="module-header">
+        <div>
+            <h1 class="page-title">Staff Management</h1>
+            <p class="subtitle">Configure trainer quality, offering proficiency, and view each staff member's working calendar.</p>
+        </div>
+        <button class="btn btn-primary" @onclick="CreateNewStaff">New Staff Member</button>
     </div>
-    <div class="mb-2">
-        <label>Email</label>
-        <InputText class="form-control" @bind-Value="model.Email" />
-    </div>
-    <button class="btn btn-primary">Add Staff</button>
-</EditForm>
 
-<ul class="mt-3">
-    @foreach (var person in staff)
+    @if (!string.IsNullOrWhiteSpace(status))
     {
-        <li>@person.Name (@person.Email)</li>
+        <div class="alert alert-info">@status</div>
     }
-</ul>
+
+    <div class="staff-shell">
+        <section class="staff-list-panel">
+            <div class="panel-header">
+                <div>
+                    <h3 class="mb-0">Team Members</h3>
+                    <div class="panel-muted">@staff.Count staff record(s)</div>
+                </div>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ReloadAsync">Refresh</button>
+            </div>
+
+            @if (staff.Count == 0)
+            {
+                <div class="empty-state">No staff members created yet.</div>
+            }
+            else
+            {
+                <div class="staff-list">
+                    @foreach (var person in staff)
+                    {
+                        <div class="staff-card @(selectedStaffId == person.Id ? "selected" : string.Empty)">
+                            <div class="staff-card-head">
+                                <div>
+                                    <button class="staff-name-btn" @onclick="() => SelectStaff(person.Id)">@person.Name</button>
+                                    <div class="staff-email">@person.Email</div>
+                                </div>
+                                <span class="rating-pill">@person.TrainingQualityRating.ToString("0.0")/5</span>
+                            </div>
+                            <div class="staff-meta">
+                                <span>@person.OfferingMappings.Count offering(s)</span>
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenCalendar(person)">View Calendar</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="staff-editor-panel">
+            <div class="panel-header">
+                <div>
+                    <h3 class="mb-0">@((model.Id > 0) ? "Edit Staff Member" : "Create Staff Member")</h3>
+                    <div class="panel-muted">Map offerings and define proficiency level for each trainer.</div>
+                </div>
+            </div>
+
+            <EditForm Model="model" OnValidSubmit="SaveAsync">
+                <div class="editor-grid">
+                    <div>
+                        <label>Name</label>
+                        <InputText class="form-control" @bind-Value="model.Name" />
+                    </div>
+                    <div>
+                        <label>Email</label>
+                        <InputText class="form-control" @bind-Value="model.Email" />
+                    </div>
+                    <div>
+                        <label>Training Quality Rating</label>
+                        <InputNumber class="form-control" @bind-Value="model.TrainingQualityRating" />
+                    </div>
+                </div>
+
+                <div class="mapping-shell">
+                    <div class="mapping-header">
+                        <div>
+                            <h4 class="mb-0">Offering Proficiency</h4>
+                            <div class="panel-muted">Assign the offerings each staff member can deliver.</div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AddMapping">Add Offering</button>
+                    </div>
+
+                    @if (model.OfferingMappings.Count == 0)
+                    {
+                        <div class="empty-inline">No offerings mapped yet.</div>
+                    }
+                    else
+                    {
+                        <div class="mapping-list">
+                            @for (var index = 0; index < model.OfferingMappings.Count; index++)
+                            {
+                                var mapping = model.OfferingMappings[index];
+                                <div class="mapping-row">
+                                    <div>
+                                        <label>Offering</label>
+                                        <select class="form-select" value="@mapping.OfferingId" @onchange="args => OnMappingOfferingChanged(index, args)">
+                                            <option value="0">Select offering</option>
+                                            @foreach (var offering in offerings)
+                                            {
+                                                <option value="@offering.Id">@offering.Name</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label>Proficiency Level</label>
+                                        <select class="form-select" value="@mapping.ProficiencyLevel" @onchange="args => OnMappingProficiencyChanged(index, args)">
+                                            @foreach (var option in ProficiencyOptions)
+                                            {
+                                                <option value="@option">@option</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div class="mapping-remove-wrap">
+                                        <button type="button" class="btn btn-outline-danger" @onclick="() => RemoveMapping(index)">Remove</button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <div class="editor-actions">
+                    <button type="button" class="btn btn-light" @onclick="CreateNewStaff">Reset</button>
+                    <button type="submit" class="btn btn-primary">Save Staff</button>
+                </div>
+            </EditForm>
+        </section>
+    </div>
+</div>
+
+@if (showCalendarDialog)
+{
+    <div class="modal-backdrop">
+        <div class="staff-calendar-dialog">
+            <div class="dialog-header">
+                <div>
+                    <h3 class="mb-0">@calendarStaffName Calendar</h3>
+                    <div class="panel-muted">View assigned offerings and scheduled occurrences for the selected range.</div>
+                </div>
+                <button class="btn btn-sm btn-light" @onclick="CloseCalendar">Close</button>
+            </div>
+
+            <div class="calendar-filter-grid">
+                <div>
+                    <label>Start Date</label>
+                    <InputDate class="form-control" @bind-Value="calendarStartDate" />
+                </div>
+                <div>
+                    <label>End Date</label>
+                    <InputDate class="form-control" @bind-Value="calendarEndDate" />
+                </div>
+                <div>
+                    <label>Offering</label>
+                    <select class="form-select" @bind="calendarOfferingId">
+                        <option value="">All mapped offerings</option>
+                        @foreach (var offering in offerings)
+                        {
+                            <option value="@offering.Id">@offering.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="calendar-filter-action">
+                    <button class="btn btn-primary w-100" @onclick="LoadCalendarAsync">Apply Filter</button>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(calendarStatus))
+            {
+                <div class="alert alert-info">@calendarStatus</div>
+            }
+
+            <div class="calendar-grid">
+                @foreach (var day in calendarDays)
+                {
+                    <div class="calendar-day-card">
+                        <div class="calendar-day-title">@day.DateUtc.ToLocalTime().ToString("ddd, MMM dd")</div>
+                        @if (day.Entries.Count == 0)
+                        {
+                            <div class="calendar-day-empty">No assigned offerings scheduled.</div>
+                        }
+                        else
+                        {
+                            @foreach (var entry in day.Entries)
+                            {
+                                <div class="calendar-entry" style="border-left-color:@entry.Color">
+                                    <div class="calendar-entry-time">@entry.SlotStartUtc.ToLocalTime().ToString("hh:mm tt") - @entry.SlotEndUtc.ToLocalTime().ToString("hh:mm tt")</div>
+                                    <div class="calendar-entry-title">@entry.OfferingName</div>
+                                    <div class="calendar-entry-subtitle">@entry.Title</div>
+                                    <div class="calendar-entry-bookings">@entry.TotalBookingCount booking(s)</div>
+                                </div>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
 
 @code {
-    private StaffDto model = new();
+    private static readonly string[] ProficiencyOptions =
+    [
+        "Beginner",
+        "Intermediate",
+        "Advanced",
+        "Expert"
+    ];
+
     private List<StaffDto> staff = new();
+    private List<OfferingSummaryDto> offerings = new();
+    private StaffDto model = NewStaffModel();
+    private int? selectedStaffId;
+    private string? status;
 
-    protected override async Task OnInitializedAsync() => staff = await ApiClient.StaffAsync();
+    private bool showCalendarDialog;
+    private int? calendarStaffId;
+    private string calendarStaffName = string.Empty;
+    private DateTime? calendarStartDate = DateTime.Today;
+    private DateTime? calendarEndDate = DateTime.Today.AddDays(6);
+    private int? calendarOfferingId;
+    private string? calendarStatus;
+    private List<StaffCalendarDayDto> calendarDays = new();
 
-    private async Task Create()
+    protected override async Task OnInitializedAsync()
     {
-        if (await ApiClient.CreateStaffAsync(model))
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        offerings = await ApiClient.OfferingsSummaryAsync();
+        staff = await ApiClient.StaffAsync();
+
+        if (selectedStaffId.HasValue)
         {
-            model = new StaffDto();
-            staff = await ApiClient.StaffAsync();
+            var selected = staff.FirstOrDefault(x => x.Id == selectedStaffId.Value);
+            if (selected is not null)
+            {
+                model = CloneStaff(selected);
+            }
+            else
+            {
+                selectedStaffId = null;
+                model = NewStaffModel();
+            }
         }
+    }
+
+    private void CreateNewStaff()
+    {
+        selectedStaffId = null;
+        model = NewStaffModel();
+        status = null;
+    }
+
+    private void SelectStaff(int id)
+    {
+        var selected = staff.FirstOrDefault(x => x.Id == id);
+        if (selected is null)
+        {
+            return;
+        }
+
+        selectedStaffId = id;
+        model = CloneStaff(selected);
+        status = null;
+    }
+
+    private void AddMapping()
+    {
+        model.OfferingMappings.Add(new StaffOfferingMappingDto());
+    }
+
+    private void RemoveMapping(int index)
+    {
+        if (index < 0 || index >= model.OfferingMappings.Count)
+        {
+            return;
+        }
+
+        model.OfferingMappings.RemoveAt(index);
+    }
+
+    private void OnMappingOfferingChanged(int index, ChangeEventArgs args)
+    {
+        if (index < 0 || index >= model.OfferingMappings.Count)
+        {
+            return;
+        }
+
+        model.OfferingMappings[index].OfferingId = int.TryParse(args.Value?.ToString(), out var value) ? value : 0;
+        model.OfferingMappings[index].OfferingName = offerings.FirstOrDefault(x => x.Id == model.OfferingMappings[index].OfferingId)?.Name ?? string.Empty;
+    }
+
+    private void OnMappingProficiencyChanged(int index, ChangeEventArgs args)
+    {
+        if (index < 0 || index >= model.OfferingMappings.Count)
+        {
+            return;
+        }
+
+        model.OfferingMappings[index].ProficiencyLevel = args.Value?.ToString() ?? "Intermediate";
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(model.Name) || string.IsNullOrWhiteSpace(model.Email))
+        {
+            status = "Name and email are required.";
+            return;
+        }
+
+        model.OfferingMappings = model.OfferingMappings
+            .Where(x => x.OfferingId > 0)
+            .GroupBy(x => x.OfferingId)
+            .Select(x =>
+            {
+                var first = x.First();
+                first.OfferingName = offerings.FirstOrDefault(o => o.Id == first.OfferingId)?.Name ?? first.OfferingName;
+                return first;
+            })
+            .ToList();
+
+        var saved = await ApiClient.SaveStaffAsync(model);
+        if (saved is null)
+        {
+            status = "Staff save failed.";
+            return;
+        }
+
+        status = "Staff saved.";
+        selectedStaffId = saved.Id;
+        model = CloneStaff(saved);
+        await ReloadAsync();
+    }
+
+    private async Task OpenCalendar(StaffDto person)
+    {
+        calendarStaffId = person.Id;
+        calendarStaffName = person.Name;
+        calendarStartDate = DateTime.Today;
+        calendarEndDate = DateTime.Today.AddDays(6);
+        calendarOfferingId = null;
+        calendarStatus = null;
+        calendarDays.Clear();
+        showCalendarDialog = true;
+        await LoadCalendarAsync();
+    }
+
+    private void CloseCalendar()
+    {
+        showCalendarDialog = false;
+        calendarStaffId = null;
+        calendarStaffName = string.Empty;
+        calendarStatus = null;
+        calendarDays.Clear();
+    }
+
+    private async Task LoadCalendarAsync()
+    {
+        if (!calendarStaffId.HasValue || !calendarStartDate.HasValue || !calendarEndDate.HasValue)
+        {
+            calendarStatus = "Choose a date range to view the staff calendar.";
+            calendarDays.Clear();
+            return;
+        }
+
+        var calendar = await ApiClient.StaffCalendarAsync(
+            calendarStaffId.Value,
+            ToUtcStart(calendarStartDate.Value),
+            ToUtcEnd(calendarEndDate.Value),
+            calendarOfferingId);
+
+        calendarDays = calendar?.Days.ToList() ?? new List<StaffCalendarDayDto>();
+        calendarStatus = calendarDays.Sum(x => x.Entries.Count) == 0
+            ? "No scheduled offerings found for this staff member in the selected range."
+            : null;
+    }
+
+    private static StaffDto NewStaffModel()
+        => new()
+        {
+            TrainingQualityRating = 0
+        };
+
+    private static StaffDto CloneStaff(StaffDto staff)
+        => new()
+        {
+            Id = staff.Id,
+            Name = staff.Name,
+            Email = staff.Email,
+            TrainingQualityRating = staff.TrainingQualityRating,
+            OfferingMappings = staff.OfferingMappings
+                .Select(x => new StaffOfferingMappingDto
+                {
+                    Id = x.Id,
+                    OfferingId = x.OfferingId,
+                    OfferingName = x.OfferingName,
+                    ProficiencyLevel = x.ProficiencyLevel
+                })
+                .ToList()
+        };
+
+    private static DateTime ToUtcStart(DateTime localDate)
+    {
+        var offset = TimeZoneInfo.Local.GetUtcOffset(localDate);
+        return new DateTimeOffset(localDate.Year, localDate.Month, localDate.Day, 0, 0, 0, offset).UtcDateTime;
+    }
+
+    private static DateTime ToUtcEnd(DateTime localDate)
+    {
+        var offset = TimeZoneInfo.Local.GetUtcOffset(localDate);
+        return new DateTimeOffset(localDate.Year, localDate.Month, localDate.Day, 23, 59, 59, offset).UtcDateTime;
     }
 }

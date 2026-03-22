@@ -14,6 +14,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<ShowcasePage> ShowcasePages => Set<ShowcasePage>();
     public DbSet<ShowcasePageItem> ShowcasePageItems => Set<ShowcasePageItem>();
     public DbSet<StaffMember> StaffMembers => Set<StaffMember>();
+    public DbSet<StaffOfferingMapping> StaffOfferingMappings => Set<StaffOfferingMapping>();
     public DbSet<Occurrence> Occurrences => Set<Occurrence>();
     public DbSet<OccurrenceSlot> OccurrenceSlots => Set<OccurrenceSlot>();
     public DbSet<Booking> Bookings => Set<Booking>();
@@ -61,6 +62,18 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             .HasMany(x => x.Items)
             .WithOne(x => x.ShowcasePage)
             .HasForeignKey(x => x.ShowcasePageId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<StaffMember>()
+            .HasMany(x => x.OfferingMappings)
+            .WithOne(x => x.StaffMember)
+            .HasForeignKey(x => x.StaffMemberId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<StaffOfferingMapping>()
+            .HasOne(x => x.Offering)
+            .WithMany()
+            .HasForeignKey(x => x.OfferingId)
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.Entity<Occurrence>()

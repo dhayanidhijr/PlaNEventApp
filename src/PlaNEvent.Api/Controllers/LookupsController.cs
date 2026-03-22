@@ -80,30 +80,167 @@ public sealed class LookupsController(AppDbContext dbContext, IActivityService a
         var ownerId = CurrentUserId();
         var staff = await dbContext.StaffMembers
             .AsNoTracking()
+            .Include(x => x.OfferingMappings)
+            .ThenInclude(x => x.Offering)
             .Where(x => x.OwnerId == ownerId)
             .OrderBy(x => x.Name)
-            .Select(x => new StaffDto { Id = x.Id, Name = x.Name, Email = x.Email })
             .ToListAsync();
 
-        return Ok(staff);
+        return Ok(staff.Select(MapStaff));
     }
 
     [HttpPost("staff")]
-    public async Task<ActionResult<StaffDto>> CreateStaff(StaffDto request, CancellationToken cancellationToken)
+    public async Task<ActionResult<StaffDto>> SaveStaff(StaffDto request, CancellationToken cancellationToken)
     {
-        var staff = new StaffMember
+        var ownerId = CurrentUserId();
+        var isCreate = request.Id <= 0;
+        StaffMember? staff;
+
+        if (isCreate)
         {
-            OwnerId = CurrentUserId(),
-            Name = request.Name,
-            Email = request.Email
-        };
+            staff = new StaffMember
+            {
+                OwnerId = ownerId
+            };
 
-        dbContext.StaffMembers.Add(staff);
+            dbContext.StaffMembers.Add(staff);
+        }
+        else
+        {
+            staff = await dbContext.StaffMembers
+                .Include(x => x.OfferingMappings)
+                .FirstOrDefaultAsync(x => x.OwnerId == ownerId && x.Id == request.Id, cancellationToken);
+
+            if (staff is null)
+            {
+                return NotFound();
+            }
+        }
+
+        staff.Name = request.Name.Trim();
+        staff.Email = request.Email.Trim();
+        staff.TrainingQualityRating = request.TrainingQualityRating;
+        staff.OfferingMappings.Clear();
+
+        foreach (var mapping in request.OfferingMappings
+                     .Where(x => x.OfferingId > 0)
+                     .GroupBy(x => x.OfferingId)
+                     .Select(x => x.First()))
+        {
+            staff.OfferingMappings.Add(new StaffOfferingMapping
+            {
+                OfferingId = mapping.OfferingId,
+                ProficiencyLevel = string.IsNullOrWhiteSpace(mapping.ProficiencyLevel) ? "Intermediate" : mapping.ProficiencyLevel.Trim()
+            });
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken);
-        await activityService.LogAsync(CurrentUserId(), "staff.create", staff.Name, cancellationToken);
+        await activityService.LogAsync(ownerId, isCreate ? "staff.create" : "staff.update", staff.Name, cancellationToken);
 
-        return Ok(new StaffDto { Id = staff.Id, Name = staff.Name, Email = staff.Email });
+        var saved = await dbContext.StaffMembers
+            .AsNoTracking()
+            .Include(x => x.OfferingMappings)
+            .ThenInclude(x => x.Offering)
+            .FirstAsync(x => x.Id == staff.Id, cancellationToken);
+
+        return Ok(MapStaff(saved));
+    }
+
+    [HttpGet("staff/{id:int}/calendar")]
+    public async Task<ActionResult<StaffCalendarDto>> StaffCalendar(int id, [FromQuery] DateTime? startUtc, [FromQuery] DateTime? endUtc, [FromQuery] int? offeringId)
+    {
+        if (!startUtc.HasValue || !endUtc.HasValue)
+        {
+            return BadRequest("Start and end dates are required.");
+        }
+
+        var ownerId = CurrentUserId();
+        var staff = await dbContext.StaffMembers
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.OwnerId == ownerId && x.Id == id);
+
+        if (staff is null)
+        {
+            return NotFound();
+        }
+
+        var rangeStart = DateTime.SpecifyKind(startUtc.Value, DateTimeKind.Utc);
+        var rangeEnd = DateTime.SpecifyKind(endUtc.Value, DateTimeKind.Utc);
+
+        var occurrences = await dbContext.Occurrences
+            .AsNoTracking()
+            .Include(x => x.Offering)
+            .Include(x => x.Slots)
+            .Where(x => x.OwnerId == ownerId && x.StaffId == id)
+            .Where(x => !offeringId.HasValue || x.OfferingId == offeringId.Value)
+            .Where(x => x.Slots.Any(slot => slot.StartUtc <= rangeEnd && slot.EndUtc >= rangeStart))
+            .OrderBy(x => x.Title)
+            .ToListAsync();
+
+        var bookingCounts = await dbContext.Bookings
+            .AsNoTracking()
+            .Where(x => x.OccurrenceSlot != null && x.OccurrenceSlot.Occurrence != null)
+            .Where(x => x.OccurrenceSlot!.Occurrence!.OwnerId == ownerId && x.OccurrenceSlot.Occurrence.StaffId == id)
+            .Where(x => !offeringId.HasValue || x.OccurrenceSlot!.Occurrence!.OfferingId == offeringId.Value)
+            .Where(x => x.OccurrenceSlot!.StartUtc <= rangeEnd && x.OccurrenceSlot.EndUtc >= rangeStart)
+            .GroupBy(x => x.OccurrenceSlotId)
+            .Select(x => new { OccurrenceSlotId = x.Key, Count = x.Count() })
+            .ToDictionaryAsync(x => x.OccurrenceSlotId, x => x.Count);
+
+        var days = Enumerable.Range(0, (rangeEnd.Date - rangeStart.Date).Days + 1)
+            .Select(offset => rangeStart.Date.AddDays(offset))
+            .Select(day => new StaffCalendarDayDto
+            {
+                DateUtc = day,
+                Entries = occurrences
+                    .SelectMany(occurrence => occurrence.Slots
+                        .Where(slot => slot.StartUtc.Date == day.Date)
+                        .OrderBy(slot => slot.StartUtc)
+                        .Select(slot => new StaffCalendarEntryDto
+                        {
+                            OccurrenceId = occurrence.Id,
+                            OfferingId = occurrence.OfferingId,
+                            Title = occurrence.Title,
+                            OfferingName = occurrence.Offering?.Name ?? occurrence.Title,
+                            Description = occurrence.Description,
+                            Color = occurrence.Color,
+                            SlotStartUtc = slot.StartUtc,
+                            SlotEndUtc = slot.EndUtc,
+                            TotalBookingCount = bookingCounts.GetValueOrDefault(slot.Id)
+                        }))
+                    .OrderBy(entry => entry.SlotStartUtc)
+                    .ToList()
+            })
+            .ToList();
+
+        return Ok(new StaffCalendarDto
+        {
+            StaffId = staff.Id,
+            StaffName = staff.Name,
+            StartUtc = rangeStart,
+            EndUtc = rangeEnd,
+            Days = days
+        });
     }
 
     private string CurrentUserId() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
+
+    private static StaffDto MapStaff(StaffMember staff)
+        => new()
+        {
+            Id = staff.Id,
+            Name = staff.Name,
+            Email = staff.Email,
+            TrainingQualityRating = staff.TrainingQualityRating,
+            OfferingMappings = staff.OfferingMappings
+                .OrderBy(x => x.Offering?.Name ?? string.Empty)
+                .Select(x => new StaffOfferingMappingDto
+                {
+                    Id = x.Id,
+                    OfferingId = x.OfferingId,
+                    OfferingName = x.Offering?.Name ?? string.Empty,
+                    ProficiencyLevel = x.ProficiencyLevel
+                })
+                .ToList()
+        };
 }

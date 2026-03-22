@@ -70,11 +70,29 @@ public sealed class ApiClient(HttpClient httpClient, TokenAuthenticationStatePro
         return await httpClient.GetFromJsonAsync<List<StaffDto>>("api/lookups/staff") ?? new List<StaffDto>();
     }
 
-    public async Task<bool> CreateStaffAsync(StaffDto staff)
+    public async Task<StaffDto?> SaveStaffAsync(StaffDto staff)
     {
         await AttachTokenAsync();
         var response = await httpClient.PostAsJsonAsync("api/lookups/staff", staff);
-        return response.IsSuccessStatusCode;
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<StaffDto>() : null;
+    }
+
+    public async Task<StaffCalendarDto?> StaffCalendarAsync(int staffId, DateTime startUtc, DateTime endUtc, int? offeringId = null)
+    {
+        await AttachTokenAsync();
+        var queryParts = new List<string>
+        {
+            $"startUtc={Uri.EscapeDataString(startUtc.ToString("O"))}",
+            $"endUtc={Uri.EscapeDataString(endUtc.ToString("O"))}"
+        };
+
+        if (offeringId.HasValue)
+        {
+            queryParts.Add($"offeringId={offeringId.Value}");
+        }
+
+        var url = $"api/lookups/staff/{staffId}/calendar?{string.Join("&", queryParts)}";
+        return await httpClient.GetFromJsonAsync<StaffCalendarDto>(url);
     }
 
     public async Task<List<UserProfileDto>> AdminUsersAsync()
