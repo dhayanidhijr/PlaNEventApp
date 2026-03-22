@@ -12,7 +12,7 @@ namespace PlaNEvent.Api.Controllers;
 
 [ApiController]
 [Route("api/calendar-management")]
-[Authorize(Roles = $"{Roles.Admin},{Roles.Standard}")]
+[Authorize]
 public sealed class CalendarManagementController(
     AppDbContext dbContext,
     IOfferingScheduleService offeringScheduleService) : ControllerBase
