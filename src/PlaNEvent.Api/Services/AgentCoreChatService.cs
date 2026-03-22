@@ -757,6 +757,8 @@ public sealed class AgentCoreChatService(
             nowLocal,
             timeZone);
 
+        var actions = await BuildProgressReportActionsAsync(ownerId, periodKey, requestedMetrics, currentDayMetrics, currentWeekMetrics, currentMonthMetrics, cancellationToken);
+
         string htmlReply;
         try
         {
@@ -772,12 +774,14 @@ public sealed class AgentCoreChatService(
             htmlReply = BuildFallbackProgressHtml(requestedMetrics, comparisonMetrics, currentDayMetrics, currentWeekMetrics, currentMonthMetrics, nowLocal);
         }
 
+        var finalHtml = PrependProgressActionGuidanceHtml(htmlReply, actions);
+
         return new AgentChatResponse
         {
             SessionId = sessionId,
-            Reply = StripHtml(htmlReply),
-            HtmlReply = htmlReply,
-            Actions = await BuildProgressReportActionsAsync(ownerId, periodKey, requestedMetrics, currentDayMetrics, currentWeekMetrics, currentMonthMetrics, cancellationToken)
+            Reply = StripHtml(finalHtml),
+            HtmlReply = finalHtml,
+            Actions = actions
         };
     }
 
@@ -1343,6 +1347,38 @@ public sealed class AgentCoreChatService(
 
     private static string StripHtml(string html)
         => Regex.Replace(html, "<.*?>", string.Empty).Trim();
+
+    private static string PrependProgressActionGuidanceHtml(string reportHtml, IReadOnlyCollection<AgentChatActionDto> actions)
+    {
+        var recommended = actions
+            .Where(action => action.RequiresExecution)
+            .Take(3)
+            .ToList();
+
+        if (recommended.Count == 0)
+        {
+            return reportHtml;
+        }
+
+        var suggestionText = recommended.Count switch
+        {
+            1 => $"My recommendation is to {recommended[0].Label.ToLowerInvariant()}.",
+            2 => $"My recommendations are to {recommended[0].Label.ToLowerInvariant()} or {recommended[1].Label.ToLowerInvariant()}.",
+            _ => $"My strongest next actions are to {recommended[0].Label.ToLowerInvariant()}, {recommended[1].Label.ToLowerInvariant()}, or {recommended[2].Label.ToLowerInvariant()}."
+        };
+
+        const string permissionText = "If you want, I can implement one of these now. Use the button below to confirm the action you want me to perform.";
+
+        var introHtml = $"""
+<div style="display:grid;gap:0.65rem;margin-bottom:0.9rem;padding:1rem;border:1px solid var(--sage-border);border-radius:1rem;background:var(--sage-surface-muted);">
+  <div style="font-size:0.78rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--sage-muted);">Recommended Next Step</div>
+  <p style="margin:0;color:var(--sage-text);font-weight:600;">{WebUtility.HtmlEncode(suggestionText)}</p>
+  <p style="margin:0;color:var(--sage-muted);">{WebUtility.HtmlEncode(permissionText)}</p>
+</div>
+""";
+
+        return $"{introHtml}{reportHtml}";
+    }
 
     private async Task<AgentChatResponse> CreateShowcasePageFromTemplateAsync(
         string sessionId,
