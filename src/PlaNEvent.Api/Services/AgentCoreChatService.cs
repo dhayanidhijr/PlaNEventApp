@@ -257,14 +257,7 @@ public sealed class AgentCoreChatService(
             .Include(x => x.Features.OrderBy(f => f.SortOrder).ThenBy(f => f.Id))
             .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
 
-        var overrideSettings = await dbContext.SageGoalOverrideSettings
-            .AsNoTracking()
-            .Include(x => x.Features.OrderBy(f => f.SortOrder).ThenBy(f => f.Id))
-            .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
-
-        var effectiveSettings = SageGoalSettingsResolver.ResolveEffectiveSettings(settings, overrideSettings);
-
-        if (settings is null && overrideSettings is null)
+        if (settings is null)
         {
             return prompt;
         }
@@ -272,15 +265,15 @@ public sealed class AgentCoreChatService(
         var summaryLines = new List<string>
         {
             "This facility has saved business guidance you should use when suggesting offerings, showcase pages, and promotional booking strategies.",
-            $"Facility business summary: {effectiveSettings.FacilityBusinessSummary}",
-            $"Expected monthly booking count target: {effectiveSettings.ExpectedMonthlyBookingCount}",
-            $"Expected monthly sales amount target: {effectiveSettings.ExpectedMonthlySalesAmount:0.##}"
+            $"Facility business summary: {settings.FacilityBusinessSummary}",
+            $"Expected monthly booking count target: {settings.ExpectedMonthlyBookingCount}",
+            $"Expected monthly sales amount target: {settings.ExpectedMonthlySalesAmount:0.##}"
         };
 
-        if (effectiveSettings.Features.Count > 0)
+        if (settings.Features.Count > 0)
         {
             summaryLines.Add("Feature targets:");
-            summaryLines.AddRange(effectiveSettings.Features
+            summaryLines.AddRange(settings.Features
                 .OrderBy(x => x.SortOrder)
                 .Select(x => $"- {x.Name}: target share {x.TargetSharePercent:0.##}%, expected bookings {x.ExpectedMonthlyBookingCount}, expected sales {x.ExpectedMonthlySalesAmount:0.##}"));
         }
@@ -772,8 +765,6 @@ public sealed class AgentCoreChatService(
             .Include(x => x.Features.OrderBy(f => f.SortOrder).ThenBy(f => f.Id))
             .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
 
-        var effectiveSettings = SageGoalSettingsResolver.ResolveEffectiveSettings(settings, overrideSettings);
-
         var occurrences = await dbContext.Occurrences
             .AsNoTracking()
             .Include(x => x.Offering)
@@ -789,15 +780,15 @@ public sealed class AgentCoreChatService(
             .Where(x => x.Occurrence != null && x.Occurrence.OwnerId == ownerId && x.OccurrenceSlot != null)
             .ToListAsync(cancellationToken);
 
-        var requestedMetrics = BuildPeriodMetrics(requestedPeriod, occurrences, bookings, effectiveSettings, timeZone);
-        var comparisonMetrics = BuildPeriodMetrics(comparisonPeriod, occurrences, bookings, effectiveSettings, timeZone);
-        var currentDayMetrics = BuildPeriodMetrics(currentDayPeriod, occurrences, bookings, effectiveSettings, timeZone);
-        var currentWeekMetrics = BuildPeriodMetrics(currentWeekPeriod, occurrences, bookings, effectiveSettings, timeZone);
-        var currentMonthMetrics = BuildPeriodMetrics(currentMonthPeriod, occurrences, bookings, effectiveSettings, timeZone);
+        var requestedMetrics = ApplyAchievedOverrides(BuildPeriodMetrics(requestedPeriod, occurrences, bookings, settings, timeZone), overrideSettings);
+        var comparisonMetrics = ApplyAchievedOverrides(BuildPeriodMetrics(comparisonPeriod, occurrences, bookings, settings, timeZone), overrideSettings);
+        var currentDayMetrics = ApplyAchievedOverrides(BuildPeriodMetrics(currentDayPeriod, occurrences, bookings, settings, timeZone), overrideSettings);
+        var currentWeekMetrics = ApplyAchievedOverrides(BuildPeriodMetrics(currentWeekPeriod, occurrences, bookings, settings, timeZone), overrideSettings);
+        var currentMonthMetrics = ApplyAchievedOverrides(BuildPeriodMetrics(currentMonthPeriod, occurrences, bookings, settings, timeZone), overrideSettings);
 
         var reportPrompt = BuildProgressReportPrompt(
             sourceMessage,
-            effectiveSettings,
+            settings,
             requestedMetrics,
             comparisonMetrics,
             currentDayMetrics,
@@ -1200,6 +1191,56 @@ public sealed class AgentCoreChatService(
 
         var candidate = $"{offering.Name} {offering.Description} {offering.Category?.Name}".ToLowerInvariant();
         return candidate.Contains(featureName.Trim().ToLowerInvariant(), StringComparison.Ordinal);
+    }
+
+    private static PeriodMetrics ApplyAchievedOverrides(
+        PeriodMetrics metrics,
+        SageGoalOverrideSettings? overrideSettings)
+    {
+        if (overrideSettings is null)
+        {
+            return metrics;
+        }
+
+        var bookingCount = overrideSettings.OverrideExpectedMonthlyBookingCount
+            ? TargetBookingsForPeriod(overrideSettings.ExpectedMonthlyBookingCount, metrics.Period)
+            : metrics.BookingCount;
+
+        var salesAmount = overrideSettings.OverrideExpectedMonthlySalesAmount
+            ? TargetSalesForPeriod(overrideSettings.ExpectedMonthlySalesAmount, metrics.Period)
+            : metrics.SalesAmount;
+
+        var overrideFeaturesByName = overrideSettings.Features
+            .Where(x => x.IsOverrideEnabled && !string.IsNullOrWhiteSpace(x.Name))
+            .ToDictionary(x => x.Name.Trim(), x => x, StringComparer.OrdinalIgnoreCase);
+
+        var featureLines = metrics.Features
+            .Select(feature =>
+            {
+                if (!overrideFeaturesByName.TryGetValue(feature.Name, out var overrideFeature))
+                {
+                    return feature;
+                }
+
+                return new FeaturePeriodMetrics(
+                    feature.Name,
+                    feature.ExpectedMonthlyBookingCount,
+                    feature.ExpectedMonthlySalesAmount,
+                    feature.TargetSharePercent,
+                    TargetBookingsForPeriod(overrideFeature.ExpectedMonthlyBookingCount, metrics.Period),
+                    TargetSalesForPeriod(overrideFeature.ExpectedMonthlySalesAmount, metrics.Period));
+            })
+            .ToList();
+
+        return new PeriodMetrics(
+            metrics.Period,
+            metrics.OfferedSlots,
+            metrics.BookedSlots,
+            bookingCount,
+            salesAmount,
+            metrics.TargetBookingCount,
+            metrics.TargetSalesAmount,
+            featureLines);
     }
 
     private static int TargetBookingsForPeriod(int monthlyTarget, ReportPeriod period)

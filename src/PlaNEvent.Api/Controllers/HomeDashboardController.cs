@@ -44,13 +44,6 @@ public sealed class HomeDashboardController(AppDbContext dbContext) : Controller
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
 
-        var overrideSettings = await dbContext.SageGoalOverrideSettings
-            .AsNoTracking()
-            .Include(x => x.Features)
-            .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
-
-        var effectiveSettings = SageGoalSettingsResolver.ResolveEffectiveSettings(settings, overrideSettings);
-
         var entries = occurrences
             .SelectMany(occurrence => occurrence.Slots.Select(slot => new SlotEntry(
                 occurrence.Id,
@@ -101,7 +94,7 @@ public sealed class HomeDashboardController(AppDbContext dbContext) : Controller
         var monthEnd = monthStart.AddMonths(1).AddDays(-1);
         var yearStart = new DateTime(todayLocal.Year, 1, 1);
 
-        var monthlyTarget = effectiveSettings.ExpectedMonthlyBookingCount;
+        var monthlyTarget = settings?.ExpectedMonthlyBookingCount ?? 0;
 
         var result = new HomeDashboardDto
         {
