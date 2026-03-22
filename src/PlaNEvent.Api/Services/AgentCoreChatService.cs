@@ -289,6 +289,14 @@ public sealed class AgentCoreChatService(
             Only recommend creating a new offering when the current supply is clearly insufficient for the target.
             Use this context when you recommend or create showcase events so the plan helps meet or exceed the saved targets.
             When discussing facility strategy, tie your recommendations back to these goals explicitly.
+            Goal-setting features are planning signals only. They are not valid showcase API source types by themselves.
+            Before attempting to create or update a showcase page, resolve each feature to a real live offering or category record and use that record's numeric id.
+            Showcase page items only support SourceType values of "offering" or "category".
+            Showcase page items only support CarouselType values of "carousel" or "rail".
+            When saving a showcase page, send the complete page payload with name, slug, isActive, isHomePage, and the full items array.
+            Each showcase item should include at least name, sourceType, sourceId, carouselType, and sortOrder.
+            If an existing page is being updated, load that page first and then send the full updated item list rather than a partial patch.
+            If there is no matching live offering or category for a requested feature, explain that the supply needs to exist first instead of claiming the showcase API itself is blocked.
             </system>
 
             {prompt}

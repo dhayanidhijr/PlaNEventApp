@@ -91,9 +91,19 @@ def execute_operation(
     path = operation.path
     query: dict[str, Any] = {}
     body = values.get("body")
+    body_property_names = operation.input_schema.get("x-body-properties", [])
+
+    if body is None and body_property_names:
+        body_values = {
+            key: values[key]
+            for key in body_property_names
+            if key in values and values[key] is not None
+        }
+        if body_values:
+            body = body_values
 
     for key, value in values.items():
-        if key == "body" or value is None:
+        if key == "body" or key in body_property_names or value is None:
             continue
 
         token = "{" + key + "}"
@@ -163,6 +173,7 @@ def build_unique_name(
 def build_input_schema(operation: dict[str, Any], components: dict[str, Any]) -> dict[str, Any]:
     properties: dict[str, Any] = {}
     required: list[str] = []
+    body_property_names: list[str] = []
 
     for parameter in operation.get("parameters", []):
         resolved_parameter = resolve_schema(parameter, components)
@@ -200,16 +211,40 @@ def build_input_schema(operation: dict[str, Any], components: dict[str, Any]) ->
             resolved_body = resolve_schema(body_schema, components)
             if not isinstance(resolved_body, dict):
                 resolved_body = {"type": "object"}
-            properties["body"] = copy.deepcopy(resolved_body)
-            properties["body"]["description"] = request_body.get("description") or "Request body."
-            if request_body.get("required"):
-                required.append("body")
+            resolved_body = copy.deepcopy(resolved_body)
+            body_properties = resolved_body.get("properties", {})
+
+            if resolved_body.get("type") == "object" and isinstance(body_properties, dict) and body_properties:
+                body_required = resolved_body.get("required", [])
+                for name, schema in body_properties.items():
+                    if name in properties:
+                        continue
+
+                    body_property_names.append(name)
+                    flattened_schema = copy.deepcopy(schema) if isinstance(schema, dict) else {"type": "string"}
+                    flattened_schema["description"] = (
+                        flattened_schema.get("description")
+                        or f"Request body field {name}."
+                    )
+                    properties[name] = flattened_schema
+                    if name in body_required:
+                        required.append(name)
+
+                properties["body"] = resolved_body
+                properties["body"]["description"] = request_body.get("description") or "Full request body."
+            else:
+                properties["body"] = resolved_body
+                properties["body"]["description"] = request_body.get("description") or "Request body."
+                if request_body.get("required"):
+                    required.append("body")
 
     schema: dict[str, Any] = {
         "type": "object",
         "properties": properties,
         "additionalProperties": False,
     }
+    if body_property_names:
+        schema["x-body-properties"] = body_property_names
     if required:
         schema["required"] = sorted(set(required))
     return schema

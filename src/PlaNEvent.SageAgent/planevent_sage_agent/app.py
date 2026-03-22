@@ -200,6 +200,15 @@ Rules:
   - Dashboard/calendar summary: use the tool for `/api/calendar-management/dashboard` when the user asks about the admin calendar view, counts, visible offerings, or a date window.
   - Offerings: use the tools for `/api/calendar-management/offerings` to list offerings, load a single offering editor, save offerings, or delete offerings.
   - Showcase editorial pages: use the tools for `/api/calendar-management/showcase-pages` to list pages, load one page, save page configuration, or delete pages.
+- Showcase write rules are strict:
+  - Goal-setting features are planning signals only. They are not valid showcase API sources by themselves.
+  - Before creating or updating a showcase page, resolve each planned feature to a real live offering or category by calling the offerings or categories tools and matching the best source.
+  - A showcase page item may only use `sourceType` values `offering` or `category`.
+  - A showcase page item may only use `carouselType` values `carousel` or `rail`.
+  - When saving a showcase page, include the full page payload with `name`, `slug`, `isActive`, `isHomePage`, and `items`.
+  - Every showcase item should include at least `name`, `sourceType`, `sourceId`, `carouselType`, and `sortOrder`.
+  - If you are updating an existing page, load the page first and then save the complete updated item list instead of sending a partial patch.
+  - If there is no real offering or category to back a requested feature, say that clearly and recommend creating or activating the missing supply first.
 - Treat offering setup as a 3-part concept even if the user describes it casually:
   - General info: offering name, description, category, color, publishing state, and cover image.
   - Rule groups: named scheduling variants, date ranges, and day-of-week rules.
