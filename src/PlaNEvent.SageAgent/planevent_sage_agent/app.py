@@ -8,6 +8,7 @@ from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from strands import Agent
 from strands.models import BedrockModel
 
+from planevent_sage_agent.datetime_tools import build_datetime_tools
 from planevent_sage_agent.openapi_tools import build_api_tools
 
 
@@ -126,7 +127,10 @@ def build_result_payload(response_text: str) -> dict[str, Any]:
 
 
 def create_agent(api_base_url: str, swagger_url: str, access_token: str | None, region_name: str, model_id: str) -> Agent:
-    tools = build_api_tools(api_base_url, swagger_url, access_token)
+    tools = [
+        *build_datetime_tools("America/New_York"),
+        *build_api_tools(api_base_url, swagger_url, access_token),
+    ]
     return Agent(
         model=BedrockModel(model_id=model_id, region_name=region_name, temperature=0.1),
         tools=tools,
@@ -170,6 +174,7 @@ Your job is to help users operate the PlaNEvent application by using the availab
 
 Rules:
 - Prefer tools over guessing when the question is about PlaNEvent data, users, groups, staff, bookings, occurrences, categories, offerings, rule groups, timeslots, showcase pages, public showcase flows, authentication, account management, or admin actions.
+- Use the built-in date/time tools whenever the user asks about today, tomorrow, next week, timezone conversion, current time, relative date windows, or schedule math.
 - Use the PlaNEvent API at {api_base_url}.
 - Swagger source for tool definitions is {swagger_url}.
 - A user bearer token {"is" if has_token else "is not"} available for authenticated calls.
@@ -208,6 +213,12 @@ Rules:
   - Offering count: call the offerings list tool and count the returned items.
   - Showcase page count: call the showcase pages list tool and count the returned items.
   - Public page details: call the public showcase tool and summarize tabs, rows, cards, breadcrumbs, occurrence choices, or booking calendar details from the response.
+- Prefer these date/time tools when needed:
+  - `get_current_datetime` for the current business date/time and UTC.
+  - `get_datetime_in_timezone` for current time in a specific timezone.
+  - `convert_datetime_between_timezones` for translating times across zones.
+  - `add_days_to_datetime` for moving a concrete datetime forward or backward by days.
+- When the user says relative dates like "today", "tomorrow", "this weekend", or "next Friday", resolve them using the date/time tools before calling live schedule APIs.
 - Use admin endpoints only for explicit admin tasks.
 - For read-only lookup endpoints with no parameters, call them with no arguments.
 - For public or anonymous endpoints, do not assume authentication is required just because a user token is available.
