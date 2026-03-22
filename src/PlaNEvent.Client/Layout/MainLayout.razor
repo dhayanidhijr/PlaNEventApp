@@ -1,6 +1,8 @@
 @inherits LayoutComponentBase
 @inject AuthService AuthService
 @inject NavigationManager NavigationManager
+@inject PlaNEvent.Client.Services.DisplaySettingsService DisplaySettings
+@implements IDisposable
 
 <div class="app-shell">
     <aside class="app-sidebar">
@@ -10,15 +12,28 @@
     <main class="app-main">
         <header class="app-topbar px-4">
             <div class="app-topbar-left">
-                <span>@DateTime.Now.ToString("MMMM dd, yyyy")</span>
-                <span>@DateTime.Now.ToString("hh:mm:ss tt")</span>
-                <span>@($"(UTC{DateTimeOffset.Now:zzz})")</span>
+                <span>@CurrentTime.ToString("MMMM dd, yyyy")</span>
+                <span>@CurrentTime.ToString("hh:mm:ss tt")</span>
+                <span>@CurrentTimeZoneDisplay</span>
             </div>
             <div class="app-topbar-right">
-                <select class="form-select form-select-sm app-city-select" @bind="city">
-                    <option>New York City</option>
-                    <option>Chennai City</option>
-                    <option>London City</option>
+                <select class="form-select form-select-sm app-timezone-select" value="@selectedTimeZoneId" @onchange="OnTimeZoneChanged">
+                    @foreach (var timeZone in TimeZoneOptions)
+                    {
+                        <option value="@timeZone.Id">@timeZone.Label</option>
+                    }
+                </select>
+                <select class="form-select form-select-sm app-theme-select" value="@DisplaySettings.Theme" @onchange="OnThemeChanged">
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                    <option value="grayscale">Grayscale</option>
+                    <option value="color">Color</option>
+                </select>
+                <select class="form-select form-select-sm app-scale-select" value="@DisplaySettings.ScalePercent" @onchange="OnScaleChanged">
+                    @foreach (var scaleOption in ScaleOptions)
+                    {
+                        <option value="@scaleOption">@($"{scaleOption}%")</option>
+                    }
                 </select>
                 <AuthorizeView>
                     <Authorized>
@@ -37,11 +52,113 @@
 <AgentChatOverlay />
 
 @code {
-    private string city = "New York City";
+    private string selectedTimeZoneId = "America/New_York";
+    private PeriodicTimer? clockTimer;
+    private CancellationTokenSource? clockCancellation;
+
+    private static readonly int[] ScaleOptions = [50, 75, 100, 125, 150, 200, 300, 400, 500];
+
+    private static readonly (string Id, string Label)[] TimeZoneOptions =
+    [
+        ("America/New_York", "New York"),
+        ("Europe/London", "London"),
+        ("Asia/Kolkata", "Chennai")
+    ];
+
+    private DateTimeOffset CurrentTime => TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, SelectedTimeZone);
+
+    private TimeZoneInfo SelectedTimeZone => ResolveTimeZone(selectedTimeZoneId);
+
+    private string CurrentTimeZoneDisplay
+    {
+        get
+        {
+            var current = CurrentTime;
+            var label = TimeZoneOptions.FirstOrDefault(option => option.Id == selectedTimeZoneId).Label;
+            return $"{label} (UTC{current:zzz})";
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        DisplaySettings.Changed += OnDisplaySettingsChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await DisplaySettings.EnsureInitializedAsync();
+
+        clockCancellation = new CancellationTokenSource();
+        clockTimer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        _ = RunClockAsync(clockCancellation.Token);
+    }
 
     private async Task SignOut()
     {
         await AuthService.LogoutAsync();
         NavigationManager.NavigateTo("/auth/login", true);
+    }
+
+    private async Task OnThemeChanged(ChangeEventArgs args)
+    {
+        await DisplaySettings.SetThemeAsync(args.Value?.ToString() ?? "color");
+    }
+
+    private async Task OnScaleChanged(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var scalePercent))
+        {
+            await DisplaySettings.SetScalePercentAsync(scalePercent);
+        }
+    }
+
+    private Task OnTimeZoneChanged(ChangeEventArgs args)
+    {
+        selectedTimeZoneId = args.Value?.ToString() ?? "America/New_York";
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RunClockAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (clockTimer is not null && await clockTimer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void OnDisplaySettingsChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private static TimeZoneInfo ResolveTimeZone(string id)
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(id);
+        }
+        catch
+        {
+            return TimeZoneInfo.Local;
+        }
+    }
+
+    public void Dispose()
+    {
+        DisplaySettings.Changed -= OnDisplaySettingsChanged;
+        clockCancellation?.Cancel();
+        clockTimer?.Dispose();
+        clockCancellation?.Dispose();
     }
 }
