@@ -475,8 +475,8 @@ public sealed class CalendarManagementController(
 
             ruleGroup.Name = ruleGroupDto.Name.Trim();
             ruleGroup.Color = ruleGroupDto.Color;
-            ruleGroup.StartDateUtc = ruleGroupDto.StartDateUtc.Date;
-            ruleGroup.EndDateUtc = ruleGroupDto.EndDateUtc?.Date;
+            ruleGroup.StartDateUtc = AsUtcDate(ruleGroupDto.StartDateUtc);
+            ruleGroup.EndDateUtc = ruleGroupDto.EndDateUtc.HasValue ? AsUtcDate(ruleGroupDto.EndDateUtc.Value) : null;
             ruleGroup.FrequencyType = ruleGroupDto.FrequencyType;
             ruleGroup.WeekdaysCsv = string.Join(",", ruleGroupDto.Weekdays.OrderBy(x => x));
             ruleGroup.Interval = Math.Max(ruleGroupDto.Interval, 1);
@@ -551,4 +551,7 @@ public sealed class CalendarManagementController(
             .Select(static value => int.TryParse(value, out var parsed) ? parsed : -1)
             .Where(static value => value >= 0 && value <= 6)
             .ToList();
+
+    private static DateTime AsUtcDate(DateTime value)
+        => DateTime.SpecifyKind(value.Date, DateTimeKind.Utc);
 }
