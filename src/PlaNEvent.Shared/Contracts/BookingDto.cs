@@ -11,4 +11,5 @@ public sealed class BookingDto
     public DateTime CreatedAtUtc { get; set; }
     public string OccurrenceName { get; set; } = string.Empty;
     public DateTime? SlotStartUtc { get; set; }
+    public int TotalBookingCount { get; set; } = 1;
 }

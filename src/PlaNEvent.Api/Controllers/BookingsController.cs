@@ -49,30 +49,52 @@ public sealed class BookingsController(
         }
 
         var users = await userManager.Users.ToDictionaryAsync(x => x.Id, x => x.Email ?? string.Empty);
-        var totalCount = await query.CountAsync();
-        var visibleBookings = await query
+        var groupedBookings = (await query
+                .OrderByDescending(x => x.CreatedAtUtc)
+                .ToListAsync())
+            .GroupBy(x => new
+            {
+                x.OccurrenceId,
+                x.OccurrenceSlotId,
+                x.CustomerId
+            })
+            .Select(group =>
+            {
+                var latestBooking = group
+                    .OrderByDescending(x => x.CreatedAtUtc)
+                    .ThenByDescending(x => x.Id)
+                    .First();
+
+                return new BookingDto
+                {
+                    Id = latestBooking.Id,
+                    OccurrenceId = latestBooking.OccurrenceId,
+                    OccurrenceSlotId = latestBooking.OccurrenceSlotId,
+                    CustomerId = latestBooking.CustomerId,
+                    CustomerEmail = users.GetValueOrDefault(latestBooking.CustomerId, string.Empty),
+                    CustomerNotes = latestBooking.CustomerNotes,
+                    CreatedAtUtc = latestBooking.CreatedAtUtc,
+                    OccurrenceName = latestBooking.Occurrence?.Offering?.Name ?? latestBooking.Occurrence?.Title ?? latestBooking.OccurrenceId.ToString(),
+                    SlotStartUtc = latestBooking.OccurrenceSlot?.StartUtc,
+                    TotalBookingCount = group.Count()
+                };
+            })
             .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenByDescending(x => x.Id)
+            .ToList();
+
+        var totalCount = groupedBookings.Count;
+        var visibleBookings = groupedBookings
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .ToListAsync();
+            .ToList();
 
         return Ok(new BookingPageDto
         {
             Page = page,
             PageSize = pageSize,
             TotalCount = totalCount,
-            Items = visibleBookings.Select(x => new BookingDto
-            {
-                Id = x.Id,
-                OccurrenceId = x.OccurrenceId,
-                OccurrenceSlotId = x.OccurrenceSlotId,
-                CustomerId = x.CustomerId,
-                CustomerEmail = users.GetValueOrDefault(x.CustomerId, string.Empty),
-                CustomerNotes = x.CustomerNotes,
-                CreatedAtUtc = x.CreatedAtUtc,
-                OccurrenceName = x.Occurrence?.Offering?.Name ?? x.Occurrence?.Title ?? x.OccurrenceId.ToString(),
-                SlotStartUtc = x.OccurrenceSlot?.StartUtc
-            }).ToList()
+            Items = visibleBookings
         });
     }
 
@@ -117,7 +139,8 @@ public sealed class BookingsController(
             CustomerNotes = booking.CustomerNotes,
             CreatedAtUtc = booking.CreatedAtUtc,
             OccurrenceName = occurrence.Offering?.Name ?? occurrence.Title,
-            SlotStartUtc = occurrence.Slots.FirstOrDefault(x => x.Id == booking.OccurrenceSlotId)?.StartUtc
+            SlotStartUtc = occurrence.Slots.FirstOrDefault(x => x.Id == booking.OccurrenceSlotId)?.StartUtc,
+            TotalBookingCount = 1
         });
     }
 

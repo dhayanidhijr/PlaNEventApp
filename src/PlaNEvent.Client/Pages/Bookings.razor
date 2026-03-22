@@ -68,6 +68,7 @@
                             <th>Occurrence</th>
                             <th>Slot Start</th>
                             <th>Customer</th>
+                            <th>Total Bookings</th>
                             <th>Notes</th>
                             <th>Created (UTC)</th>
                         </tr>
@@ -80,6 +81,7 @@
                             <td>@booking.OccurrenceName</td>
                             <td>@(booking.SlotStartUtc.HasValue ? booking.SlotStartUtc.Value.ToLocalTime().ToString("MMM dd yyyy hh:mm tt") : "-")</td>
                             <td>@booking.CustomerEmail</td>
+                            <td>@booking.TotalBookingCount</td>
                             <td>@booking.CustomerNotes</td>
                             <td>@booking.CreatedAtUtc.ToString("u")</td>
                         </tr>
