@@ -777,7 +777,7 @@ public sealed class AgentCoreChatService(
             SessionId = sessionId,
             Reply = StripHtml(htmlReply),
             HtmlReply = htmlReply,
-            Actions = BuildProgressReportActions(periodKey)
+            Actions = await BuildProgressReportActionsAsync(ownerId, periodKey, requestedMetrics, currentDayMetrics, currentWeekMetrics, currentMonthMetrics, cancellationToken)
         };
     }
 
@@ -1254,7 +1254,14 @@ public sealed class AgentCoreChatService(
 """;
     }
 
-    private static List<AgentChatActionDto> BuildProgressReportActions(string activePeriodKey)
+    private async Task<List<AgentChatActionDto>> BuildProgressReportActionsAsync(
+        string ownerId,
+        string activePeriodKey,
+        PeriodMetrics requested,
+        PeriodMetrics currentDay,
+        PeriodMetrics currentWeek,
+        PeriodMetrics currentMonth,
+        CancellationToken cancellationToken)
     {
         var periods = new (string Label, string Key)[]
         {
@@ -1268,7 +1275,7 @@ public sealed class AgentCoreChatService(
             ("Last Year", "last-year")
         };
 
-        return periods
+        var actions = periods
             .Select(period => new AgentChatActionDto
             {
                 ActionType = "progress_report",
@@ -1279,8 +1286,59 @@ public sealed class AgentCoreChatService(
                 Style = string.Equals(period.Key, activePeriodKey, StringComparison.OrdinalIgnoreCase) ? "primary" : "outline-primary",
                 RequiresExecution = true
             })
-            .Append(NavigateAction("/sage-goals", "Open Sage Goal Settings", "Review or adjust the goal settings that drive this report."))
             .ToList();
+
+        var todayGap = Math.Max(0, currentDay.TargetBookingCount - currentDay.BookingCount);
+        var weekGap = Math.Max(0, currentWeek.TargetBookingCount - currentWeek.BookingCount);
+        var monthGap = Math.Max(0, currentMonth.TargetBookingCount - currentMonth.BookingCount);
+
+        if (todayGap > 0)
+        {
+            actions.Add(CreateTemplateAction(
+                "offering",
+                "private-session",
+                $"Yes, Create Offering For Today ({todayGap} short)",
+                $"Create a ready-to-book private session offering now to help close today's remaining booking gap of {todayGap}.",
+                "success"));
+        }
+
+        if (weekGap > 0)
+        {
+            actions.Add(CreateTemplateAction(
+                "offering",
+                "team-workshop",
+                $"Yes, Add Weekly Offering ({weekGap} short)",
+                $"Create a team workshop style offering to improve this week's booking pace and reduce the remaining gap of {weekGap}.",
+                "success"));
+        }
+
+        if (monthGap > 0)
+        {
+            actions.Add(CreateTemplateAction(
+                "offering",
+                "weekend-bootcamp",
+                $"Yes, Add Monthly Booster ({monthGap} short)",
+                $"Create a higher-impact weekend bootcamp offering to improve this month's booking pace and reduce the remaining gap of {monthGap}.",
+                "success"));
+        }
+
+        var hasActiveShowcasePages = await dbContext.ShowcasePages
+            .AsNoTracking()
+            .AnyAsync(x => x.OwnerId == ownerId && x.IsActive, cancellationToken);
+
+        if (!hasActiveShowcasePages && (todayGap > 0 || weekGap > 0 || monthGap > 0 || requested.BookingCount <= requested.TargetBookingCount))
+        {
+            actions.Add(CreateTemplateAction(
+                "showcase_page",
+                "home-booking-page",
+                "Yes, Create Booking Showcase Page",
+                "Create a customer-facing booking page now so the new offerings can be promoted publicly right away.",
+                "outline-primary"));
+        }
+
+        actions.Add(NavigateAction("/sage-goals", "Open Sage Goal Settings", "Review or adjust the goal settings that drive this report."));
+
+        return actions;
     }
 
     private static string StripHtml(string html)
