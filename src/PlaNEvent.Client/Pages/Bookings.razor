@@ -69,6 +69,7 @@
                             <th>Slot Start</th>
                             <th>Customer</th>
                             <th>Total Bookings</th>
+                            <th>Total Amount</th>
                             <th>Notes</th>
                             <th>Created (UTC)</th>
                         </tr>
@@ -82,6 +83,7 @@
                             <td>@(booking.SlotStartUtc.HasValue ? booking.SlotStartUtc.Value.ToLocalTime().ToString("MMM dd yyyy hh:mm tt") : "-")</td>
                             <td>@booking.CustomerEmail</td>
                             <td>@booking.TotalBookingCount</td>
+                            <td>@FormatCurrency(booking.TotalAmount)</td>
                             <td>@booking.CustomerNotes</td>
                             <td>@booking.CreatedAtUtc.ToString("u")</td>
                         </tr>
@@ -249,4 +251,6 @@
         var offset = TimeZoneInfo.Local.GetUtcOffset(localDate);
         return new DateTimeOffset(localDate.Year, localDate.Month, localDate.Day, 23, 59, 59, offset).UtcDateTime;
     }
+
+    private static string FormatCurrency(decimal value) => value.ToString("C");
 }

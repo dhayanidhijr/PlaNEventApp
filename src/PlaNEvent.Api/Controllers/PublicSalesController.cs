@@ -38,6 +38,7 @@ public sealed class PublicSalesController(AppDbContext dbContext) : ControllerBa
             RuleGroupId = x.RuleGroupId,
             Title = x.Title,
             Description = x.Description,
+            Price = x.Offering?.Price ?? 0,
             EventGroupId = x.EventGroupId,
             StaffId = x.StaffId,
             EventGroupName = x.EventGroup?.Name,

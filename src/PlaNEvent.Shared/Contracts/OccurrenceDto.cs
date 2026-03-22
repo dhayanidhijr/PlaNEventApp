@@ -7,6 +7,7 @@ public sealed class OccurrenceDto
     public int? RuleGroupId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public decimal Price { get; set; }
     public int? EventGroupId { get; set; }
     public int? StaffId { get; set; }
     public bool IsPublished { get; set; }

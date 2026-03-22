@@ -28,7 +28,7 @@
                 {
                     <button class="btn w-100 text-start mb-2 @(editor.Id == item.Id ? "btn-primary" : "btn-outline-secondary")" @onclick="() => SelectOffering(item.Id)">
                         <div>@item.Name</div>
-                        <small>@item.CategoryName</small>
+                        <small>@item.CategoryName • @FormatCurrency(item.Price)</small>
                     </button>
                 }
             </div>
@@ -71,6 +71,10 @@
                         <div class="col-md-6">
                             <label>Color</label>
                             <InputText class="form-control" @bind-Value="editor.Color" />
+                        </div>
+                        <div class="col-md-6">
+                            <label>Price</label>
+                            <InputNumber class="form-control" @bind-Value="editor.Price" />
                         </div>
                         <div class="col-md-6">
                             <label>Cover Image URL</label>
@@ -371,6 +375,7 @@
             CategoryId = editor.CategoryId,
             Name = editor.Name,
             Description = editor.Description,
+            Price = editor.Price,
             Color = editor.Color,
             CoverImageUrl = editor.CoverImageUrl,
             IsPublished = editor.IsPublished,
@@ -466,9 +471,12 @@
 
     private static string DayName(int value) => ((DayOfWeek)value).ToString()[..3];
 
+    private static string FormatCurrency(decimal value) => value.ToString("C");
+
     private static OfferingEditorDto NewEditor() => new()
     {
         Color = "#ec3e47",
+        Price = 0,
         IsActive = true,
         AllowNewBookings = true
     };

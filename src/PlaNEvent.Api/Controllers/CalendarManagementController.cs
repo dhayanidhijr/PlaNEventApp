@@ -165,6 +165,7 @@ public sealed class CalendarManagementController(
             Id = x.Id,
             Name = x.Name,
             Description = x.Description,
+            Price = x.Price,
             CategoryId = x.CategoryId,
             CategoryName = x.Category?.Name ?? string.Empty,
             Color = x.Color,
@@ -215,6 +216,7 @@ public sealed class CalendarManagementController(
         offering.CategoryId = request.CategoryId;
         offering.Name = request.Name.Trim();
         offering.Description = request.Description.Trim();
+        offering.Price = Math.Max(0, decimal.Round(request.Price, 2, MidpointRounding.AwayFromZero));
         offering.Color = request.Color;
         offering.CoverImageUrl = request.CoverImageUrl.Trim();
         offering.IsPublished = request.IsPublished;
@@ -393,6 +395,7 @@ public sealed class CalendarManagementController(
         CategoryId = offering.CategoryId,
         Name = offering.Name,
         Description = offering.Description,
+        Price = offering.Price,
         Color = offering.Color,
         CoverImageUrl = offering.CoverImageUrl,
         IsPublished = offering.IsPublished,
@@ -457,6 +460,7 @@ public sealed class CalendarManagementController(
         RuleGroupId = occurrence.RuleGroupId,
         Title = occurrence.Title,
         Description = occurrence.Description,
+        Price = occurrence.Offering?.Price ?? 0,
         IsPublished = occurrence.IsPublished,
         OfferingName = occurrence.Offering?.Name,
         RuleGroupName = occurrence.RuleGroup?.Name,

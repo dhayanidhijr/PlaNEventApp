@@ -125,6 +125,7 @@
                                         <div>
                                             <h3>@occurrence.Title</h3>
                                             <p>@occurrence.RuleGroupName</p>
+                                            <small class="booking-price">Price: @FormatCurrency(occurrence.Price)</small>
                                         </div>
                                         <span class="booking-choice-dot" style="background:@occurrence.Color"></span>
                                     </div>
@@ -136,6 +137,7 @@
                                                 <div>
                                                     <strong>@slot.StartUtc.ToLocalTime().ToString("MMM dd, yyyy")</strong>
                                                     <span>@slot.StartUtc.ToLocalTime().ToString("hh:mm tt") - @slot.EndUtc.ToLocalTime().ToString("hh:mm tt")</span>
+                                                    <small>Price: @FormatCurrency(occurrence.Price)</small>
                                                     <small>@slot.TotalBookingCount booking(s) already taken</small>
                                                 </div>
                                                 <button class="btn btn-primary" @onclick="() => OpenBookingDialog(occurrence, slot)">Book</button>
@@ -184,6 +186,10 @@
                                         {
                                             <h3>@card.Title</h3>
                                         }
+                                        @if (card.Price.HasValue && card.Price.Value > 0)
+                                        {
+                                            <div class="showcase-card-price">@FormatCurrency(card.Price.Value)</div>
+                                        }
                                         @if (card.ShowDescription)
                                         {
                                             <p>@card.Description</p>
@@ -229,6 +235,10 @@
                             <strong>@(pendingBooking.Occurrence.RuleGroupName ?? "General availability")</strong>
                         </div>
                         <div>
+                            <span>Price</span>
+                            <strong>@FormatCurrency(pendingBooking.Occurrence.Price)</strong>
+                        </div>
+                        <div>
                             <span>Seats Already Taken</span>
                             <strong>@pendingBooking.Slot.TotalBookingCount</strong>
                         </div>
@@ -263,6 +273,10 @@
                 <div>
                     <span>Schedule</span>
                     <strong>@confirmedBooking.RuleGroupName</strong>
+                </div>
+                <div>
+                    <span>Total Amount</span>
+                    <strong>@FormatCurrency(confirmedBooking.TotalAmount)</strong>
                 </div>
                 <div>
                     <span>Seats Taken</span>
@@ -383,6 +397,7 @@
             StartLocal = selection.Slot.StartUtc.ToLocalTime(),
             EndLocal = selection.Slot.EndUtc.ToLocalTime(),
             TotalBookingCount = selection.Slot.TotalBookingCount + 1,
+            TotalAmount = selection.Occurrence.Price,
             Message = "Your event is booked. You can add it to your calendar, print the confirmation, or dismiss this message."
         };
 
@@ -416,6 +431,7 @@
             $"<div class=\"meta\"><strong>Date:</strong> {confirmedBooking.StartLocal:MMM dd, yyyy}</div>",
             $"<div class=\"meta\"><strong>Time:</strong> {confirmedBooking.StartLocal:hh:mm tt} - {confirmedBooking.EndLocal:hh:mm tt}</div>",
             $"<div class=\"meta\"><strong>Schedule:</strong> {confirmedBooking.RuleGroupName}</div>",
+            $"<div class=\"meta\"><strong>Total Amount:</strong> {FormatCurrency(confirmedBooking.TotalAmount)}</div>",
             $"<div class=\"meta\"><strong>Seats Taken:</strong> {confirmedBooking.TotalBookingCount}</div>"
         });
 
@@ -520,6 +536,8 @@
         return new string(value.Select(ch => invalid.Contains(ch) ? '-' : ch).ToArray());
     }
 
+    private static string FormatCurrency(decimal value) => value.ToString("C");
+
     private sealed record ShowcaseSlotEntry(OccurrenceDto Occurrence, OccurrenceSlotDto Slot);
 
     private sealed record ShowcaseBookingSelection(OccurrenceDto Occurrence, OccurrenceSlotDto Slot);
@@ -532,6 +550,7 @@
         public DateTime StartLocal { get; set; }
         public DateTime EndLocal { get; set; }
         public int TotalBookingCount { get; set; }
+        public decimal TotalAmount { get; set; }
         public string Message { get; set; } = string.Empty;
     }
 }

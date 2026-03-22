@@ -76,7 +76,8 @@ public sealed class BookingsController(
                     CreatedAtUtc = latestBooking.CreatedAtUtc,
                     OccurrenceName = latestBooking.Occurrence?.Offering?.Name ?? latestBooking.Occurrence?.Title ?? latestBooking.OccurrenceId.ToString(),
                     SlotStartUtc = latestBooking.OccurrenceSlot?.StartUtc,
-                    TotalBookingCount = group.Count()
+                    TotalBookingCount = group.Count(),
+                    TotalAmount = (latestBooking.Occurrence?.Offering?.Price ?? 0) * group.Count()
                 };
             })
             .OrderByDescending(x => x.CreatedAtUtc)
@@ -103,6 +104,7 @@ public sealed class BookingsController(
     {
         var occurrence = await dbContext.Occurrences
             .Include(x => x.Slots)
+            .Include(x => x.Offering)
             .FirstOrDefaultAsync(x => x.Id == request.OccurrenceId && x.IsPublished, cancellationToken);
 
         if (occurrence is null)
@@ -140,7 +142,8 @@ public sealed class BookingsController(
             CreatedAtUtc = booking.CreatedAtUtc,
             OccurrenceName = occurrence.Offering?.Name ?? occurrence.Title,
             SlotStartUtc = occurrence.Slots.FirstOrDefault(x => x.Id == booking.OccurrenceSlotId)?.StartUtc,
-            TotalBookingCount = 1
+            TotalBookingCount = 1,
+            TotalAmount = occurrence.Offering?.Price ?? 0
         });
     }
 

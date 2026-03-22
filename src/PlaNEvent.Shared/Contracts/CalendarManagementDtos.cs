@@ -42,6 +42,7 @@ public sealed class OfferingEditorDto
     public int? CategoryId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public decimal Price { get; set; }
     public string Color { get; set; } = "#ec3e47";
     public string CoverImageUrl { get; set; } = string.Empty;
     public bool IsPublished { get; set; }
@@ -57,6 +58,7 @@ public sealed class OfferingSummaryDto
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public decimal Price { get; set; }
     public int? CategoryId { get; set; }
     public string CategoryName { get; set; } = string.Empty;
     public string Color { get; set; } = "#ec3e47";
@@ -72,6 +74,7 @@ public sealed class SaveOfferingRequest
     public int? CategoryId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public decimal Price { get; set; }
     public string Color { get; set; } = "#ec3e47";
     public string CoverImageUrl { get; set; } = string.Empty;
     public bool IsPublished { get; set; }
