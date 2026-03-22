@@ -8,7 +8,7 @@ public sealed class Offering
     public Category? Category { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
-    public decimal Price { get; set; }
+    public decimal Price { get; set; } = 25m;
     public string Color { get; set; } = "#ec3e47";
     public string CoverImageUrl { get; set; } = string.Empty;
     public bool IsPublished { get; set; }
