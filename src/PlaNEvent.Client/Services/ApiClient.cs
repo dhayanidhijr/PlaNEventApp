@@ -12,6 +12,13 @@ public sealed class ApiClient(HttpClient httpClient, TokenAuthenticationStatePro
         return await httpClient.GetFromJsonAsync<UserProfileDto>("api/account/profile");
     }
 
+    public async Task<HomeDashboardDto?> HomeDashboardAsync(string timeZoneId)
+    {
+        await AttachTokenAsync();
+        var query = $"api/home/dashboard?timeZoneId={Uri.EscapeDataString(timeZoneId)}";
+        return await httpClient.GetFromJsonAsync<HomeDashboardDto>(query);
+    }
+
     public async Task<SageGoalSettingsDto?> SageGoalSettingsAsync()
     {
         await AttachTokenAsync();

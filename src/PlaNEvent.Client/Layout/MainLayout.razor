@@ -2,6 +2,7 @@
 @inject AuthService AuthService
 @inject NavigationManager NavigationManager
 @inject PlaNEvent.Client.Services.DisplaySettingsService DisplaySettings
+@inject PlaNEvent.Client.Services.TimeZoneState TimeZoneState
 @implements IDisposable
 
 <div class="app-scale-root">
@@ -83,7 +84,9 @@
 
     protected override void OnInitialized()
     {
+        selectedTimeZoneId = TimeZoneState.SelectedTimeZoneId;
         DisplaySettings.Changed += OnDisplaySettingsChanged;
+        TimeZoneState.Changed += OnTimeZoneStateChanged;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -122,6 +125,7 @@
     private Task OnTimeZoneChanged(ChangeEventArgs args)
     {
         selectedTimeZoneId = args.Value?.ToString() ?? "America/New_York";
+        TimeZoneState.SetSelectedTimeZone(selectedTimeZoneId);
         return InvokeAsync(StateHasChanged);
     }
 
@@ -144,6 +148,12 @@
         _ = InvokeAsync(StateHasChanged);
     }
 
+    private void OnTimeZoneStateChanged()
+    {
+        selectedTimeZoneId = TimeZoneState.SelectedTimeZoneId;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
     private static TimeZoneInfo ResolveTimeZone(string id)
     {
         try
@@ -159,6 +169,7 @@
     public void Dispose()
     {
         DisplaySettings.Changed -= OnDisplaySettingsChanged;
+        TimeZoneState.Changed -= OnTimeZoneStateChanged;
         clockCancellation?.Cancel();
         clockTimer?.Dispose();
         clockCancellation?.Dispose();

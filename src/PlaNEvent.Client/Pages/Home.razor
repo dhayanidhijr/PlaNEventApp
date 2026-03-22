@@ -1,12 +1,351 @@
 @page "/"
 @attribute [Authorize]
+@using Microsoft.AspNetCore.Components.Rendering
+@inject ApiClient ApiClient
+@inject PlaNEvent.Client.Services.TimeZoneState TimeZoneState
+@implements IDisposable
 
-<h1>PlaNEvent Dashboard</h1>
+<div class="dashboard-page">
+    <div class="module-header">
+        <div>
+            <h1 class="page-title">Facility Dashboard</h1>
+            <p class="subtitle">Live event, booking, supply, and target tracking for the selected time zone.</p>
+        </div>
+    </div>
 
-<p>Manage your events, groups, staff, occurrences, and bookings from the side panel.</p>
-<p><strong>CI/CD Test:</strong> develop branch auto-deploy verification.</p>
+    @if (dashboard is null)
+    {
+        <div class="card">
+            <div class="card-body">
+                <p class="mb-0">Loading dashboard...</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="home-dashboard-grid">
+            <section class="home-widget">
+                <div class="home-widget-head">
+                    <div>
+                        <div class="home-widget-kicker">Today</div>
+                        <h3>Total Events Happening Today</h3>
+                    </div>
+                    <div class="home-widget-total">@dashboard.TodayEvents.Count</div>
+                </div>
+                <div class="home-widget-scroll">
+                    @if (dashboard.TodayEvents.Count == 0)
+                    {
+                        <p class="text-muted mb-0">No scheduled events today.</p>
+                    }
+                    else
+                    {
+                        @foreach (var item in dashboard.TodayEvents)
+                        {
+                            <article class="home-list-item">
+                                <span class="home-dot" style="background:@item.Color"></span>
+                                <div>
+                                    <strong>@item.Title</strong>
+                                    <div class="muted">@FormatRange(item.StartUtc, item.EndUtc)</div>
+                                </div>
+                            </article>
+                        }
+                    }
+                </div>
+            </section>
 
-<ul>
-    <li>Dedicated public sales URL pattern: <code>/sale/{your-public-slug}</code></li>
-    <li>Dedicated administration URL: <code>/admin/users</code></li>
-</ul>
+            <section class="home-widget">
+                <div class="home-widget-head">
+                    <div>
+                        <div class="home-widget-kicker">Bookings</div>
+                        <h3>Bookings By Event Today</h3>
+                    </div>
+                    <div class="home-widget-total">@dashboard.TodayBookingsByEvent.Sum(x => x.BookingCount)</div>
+                </div>
+                <div class="home-widget-scroll">
+                    @if (dashboard.TodayBookingsByEvent.Count == 0)
+                    {
+                        <p class="text-muted mb-0">No bookings recorded for today’s events yet.</p>
+                    }
+                    else
+                    {
+                        @foreach (var item in dashboard.TodayBookingsByEvent)
+                        {
+                            <article class="home-list-item">
+                                <span class="home-dot" style="background:@item.Color"></span>
+                                <div class="home-list-flex">
+                                    <div>
+                                        <strong>@item.Title</strong>
+                                        <div class="muted">@FormatRange(item.StartUtc, item.EndUtc)</div>
+                                    </div>
+                                    <div class="home-list-count">@item.BookingCount</div>
+                                </div>
+                            </article>
+                        }
+                    }
+                </div>
+            </section>
+
+            <section class="home-widget">
+                <div class="home-widget-head">
+                    <div>
+                        <div class="home-widget-kicker">Supply Vs Booked</div>
+                        <h3>Offered Booking Capacity</h3>
+                    </div>
+                    <select class="form-select form-select-sm widget-select" value="@offeredRange" @onchange="OnOfferedRangeChanged">
+                        <option value="day">Day</option>
+                        <option value="week">Week</option>
+                        <option value="month">Month</option>
+                    </select>
+                </div>
+
+                <div class="home-summary-row">
+                    <div class="home-summary-card">
+                        <span>Offered Today</span>
+                        <strong>@dashboard.OfferedBookedDay.PrimaryValue</strong>
+                    </div>
+                    <div class="home-summary-card">
+                        <span>Booked Today</span>
+                        <strong>@dashboard.OfferedBookedDay.SecondaryValue</strong>
+                    </div>
+                </div>
+
+                @if (offeredRange == "day")
+                {
+                    <div class="home-chart-wrap">
+                        @PieChart("Booked", dashboard.OfferedBookedDay.SecondaryValue, "Available", Math.Max(0, dashboard.OfferedBookedDay.PrimaryValue - dashboard.OfferedBookedDay.SecondaryValue), "var(--app-accent)", "#7fc4ff")
+                    </div>
+                }
+                else
+                {
+                    <div class="home-chart-wrap">
+                        @BarChart(offeredRange == "week" ? dashboard.OfferedBookedWeek : dashboard.OfferedBookedMonth, "Offered", "Booked")
+                    </div>
+                }
+            </section>
+
+            <section class="home-widget">
+                <div class="home-widget-head">
+                    <div>
+                        <div class="home-widget-kicker">Target Vs Actual</div>
+                        <h3>Booking Target Tracking</h3>
+                    </div>
+                    <select class="form-select form-select-sm widget-select" value="@targetRange" @onchange="OnTargetRangeChanged">
+                        <option value="day">Day</option>
+                        <option value="week">Week</option>
+                        <option value="month">Month</option>
+                        <option value="year">Year</option>
+                    </select>
+                </div>
+
+                @if (targetRange == "day")
+                {
+                    <div class="home-chart-wrap">
+                        @PieChart("Actual", dashboard.TargetActualDay.SecondaryValue, "Remaining", Math.Max(0, dashboard.TargetActualDay.PrimaryValue - dashboard.TargetActualDay.SecondaryValue), "#3bb273", "#f0b429")
+                    </div>
+                }
+                else
+                {
+                    <div class="home-chart-wrap">
+                        @BarChart(TargetPoints(), "Target", "Actual")
+                    </div>
+                }
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private HomeDashboardDto? dashboard;
+    private string offeredRange = "week";
+    private string targetRange = "week";
+
+    protected override async Task OnInitializedAsync()
+    {
+        TimeZoneState.Changed += OnTimeZoneChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        dashboard = await ApiClient.HomeDashboardAsync(TimeZoneState.SelectedTimeZoneId);
+    }
+
+    private Task OnOfferedRangeChanged(ChangeEventArgs args)
+    {
+        offeredRange = args.Value?.ToString() ?? "week";
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task OnTargetRangeChanged(ChangeEventArgs args)
+    {
+        targetRange = args.Value?.ToString() ?? "week";
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private IReadOnlyCollection<HomeComparisonPointDto> TargetPoints() => targetRange switch
+    {
+        "month" => dashboard?.TargetActualMonth ?? Array.Empty<HomeComparisonPointDto>(),
+        "year" => dashboard?.TargetActualYear ?? Array.Empty<HomeComparisonPointDto>(),
+        _ => dashboard?.TargetActualWeek ?? Array.Empty<HomeComparisonPointDto>()
+    };
+
+    private void OnTimeZoneChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            StateHasChanged();
+        });
+    }
+
+    private string FormatRange(DateTime startUtc, DateTime endUtc)
+    {
+        var timeZone = ResolveTimeZone(TimeZoneState.SelectedTimeZoneId);
+        var start = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(startUtc, DateTimeKind.Utc), timeZone);
+        var end = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(endUtc, DateTimeKind.Utc), timeZone);
+        return $"{start:MMM dd, hh:mm tt} - {end:hh:mm tt}";
+    }
+
+    private RenderFragment PieChart(string primaryLabel, int primaryValue, string secondaryLabel, int secondaryValue, string primaryColor, string secondaryColor) => builder =>
+    {
+        var total = Math.Max(primaryValue + secondaryValue, 1);
+        var primaryPercent = primaryValue / (double)total;
+        const double radius = 52;
+        var circumference = 2 * Math.PI * radius;
+        var primaryLength = circumference * primaryPercent;
+        var secondaryLength = circumference - primaryLength;
+
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "home-pie-layout");
+
+        builder.OpenElement(2, "svg");
+        builder.AddAttribute(3, "class", "home-pie-chart");
+        builder.AddAttribute(4, "viewBox", "0 0 140 140");
+
+        builder.OpenElement(5, "circle");
+        builder.AddAttribute(6, "cx", "70");
+        builder.AddAttribute(7, "cy", "70");
+        builder.AddAttribute(8, "r", radius.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        builder.AddAttribute(9, "class", "home-pie-track");
+        builder.CloseElement();
+
+        builder.OpenElement(10, "circle");
+        builder.AddAttribute(11, "cx", "70");
+        builder.AddAttribute(12, "cy", "70");
+        builder.AddAttribute(13, "r", radius.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        builder.AddAttribute(14, "class", "home-pie-segment");
+        builder.AddAttribute(15, "style", $"stroke:{primaryColor};stroke-dasharray:{primaryLength} {circumference};");
+        builder.CloseElement();
+
+        builder.OpenElement(16, "circle");
+        builder.AddAttribute(17, "cx", "70");
+        builder.AddAttribute(18, "cy", "70");
+        builder.AddAttribute(19, "r", radius.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        builder.AddAttribute(20, "class", "home-pie-segment");
+        builder.AddAttribute(21, "style", $"stroke:{secondaryColor};stroke-dasharray:{secondaryLength} {circumference};stroke-dashoffset:-{primaryLength};");
+        builder.CloseElement();
+
+        builder.OpenElement(22, "text");
+        builder.AddAttribute(23, "x", "70");
+        builder.AddAttribute(24, "y", "68");
+        builder.AddAttribute(25, "text-anchor", "middle");
+        builder.AddAttribute(26, "class", "home-pie-value");
+        builder.AddContent(27, primaryValue);
+        builder.CloseElement();
+
+        builder.OpenElement(28, "text");
+        builder.AddAttribute(29, "x", "70");
+        builder.AddAttribute(30, "y", "86");
+        builder.AddAttribute(31, "text-anchor", "middle");
+        builder.AddAttribute(32, "class", "home-pie-label");
+        builder.AddContent(33, primaryLabel);
+        builder.CloseElement();
+        builder.CloseElement();
+
+        builder.OpenElement(34, "div");
+        builder.AddAttribute(35, "class", "home-legend");
+        LegendItem(builder, 36, primaryLabel, primaryValue, primaryColor);
+        LegendItem(builder, 46, secondaryLabel, secondaryValue, secondaryColor);
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    private RenderFragment BarChart(IReadOnlyCollection<HomeComparisonPointDto> points, string primaryLabel, string secondaryLabel) => builder =>
+    {
+        var max = Math.Max(points.Select(x => Math.Max(x.PrimaryValue, x.SecondaryValue)).DefaultIfEmpty(1).Max(), 1);
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "home-bar-chart");
+
+        builder.OpenElement(2, "div");
+        builder.AddAttribute(3, "class", "home-bar-legend");
+        LegendItem(builder, 4, primaryLabel, null, "var(--app-accent)");
+        LegendItem(builder, 14, secondaryLabel, null, "#3bb273");
+        builder.CloseElement();
+
+        builder.OpenElement(24, "div");
+        builder.AddAttribute(25, "class", "home-bar-grid");
+        var seq = 26;
+        foreach (var point in points)
+        {
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "home-bar-group");
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "home-bars");
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "home-bar primary");
+            builder.AddAttribute(seq++, "style", $"height:{Math.Max(8, point.PrimaryValue * 100 / max)}%;");
+            builder.AddAttribute(seq++, "title", $"{primaryLabel}: {point.PrimaryValue}");
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "home-bar secondary");
+            builder.AddAttribute(seq++, "style", $"height:{Math.Max(8, point.SecondaryValue * 100 / max)}%;");
+            builder.AddAttribute(seq++, "title", $"{secondaryLabel}: {point.SecondaryValue}");
+            builder.CloseElement();
+
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "home-bar-caption");
+            builder.AddContent(seq++, point.Label);
+            builder.CloseElement();
+
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    private static void LegendItem(RenderTreeBuilder builder, int seq, string label, int? value, string color)
+    {
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "home-legend-item");
+        builder.OpenElement(seq++, "span");
+        builder.AddAttribute(seq++, "class", "home-legend-dot");
+        builder.AddAttribute(seq++, "style", $"background:{color}");
+        builder.CloseElement();
+        builder.OpenElement(seq++, "span");
+        builder.AddContent(seq++, value.HasValue ? $"{label}: {value.Value}" : label);
+        builder.CloseElement();
+        builder.CloseElement();
+    }
+
+    private static TimeZoneInfo ResolveTimeZone(string id)
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(id);
+        }
+        catch
+        {
+            return TimeZoneInfo.Utc;
+        }
+    }
+
+    public void Dispose()
+    {
+        TimeZoneState.Changed -= OnTimeZoneChanged;
+    }
+}

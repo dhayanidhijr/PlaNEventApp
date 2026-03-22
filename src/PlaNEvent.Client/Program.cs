@@ -19,6 +19,7 @@ builder.Services.AddScoped<ApiClient>();
 builder.Services.AddScoped<BookingService>();
 builder.Services.AddScoped<AgentChatOverlayState>();
 builder.Services.AddScoped<DisplaySettingsService>();
+builder.Services.AddScoped<TimeZoneState>();
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(apiBaseUrl) });
 
 await builder.Build().RunAsync();
