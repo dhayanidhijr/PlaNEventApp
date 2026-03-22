@@ -1,3 +1,5 @@
+using PlaNEvent.Shared.Contracts;
+
 namespace PlaNEvent.Client.Services;
 
 public sealed class AgentChatOverlayState
@@ -88,26 +90,40 @@ public sealed class AgentChatOverlayState
 
     public void SetLastAgentMessage(string text, bool isHtml = false)
     {
-        SetLastAgentMessage(text, isHtml, false, false, false);
+        SetLastAgentMessage(text, isHtml, false, false, false, null, null);
     }
 
     public void SetLastAgentThinking(string text)
     {
-        SetLastAgentMessage(text, false, true, false, false);
+        SetLastAgentMessage(text, false, true, false, false, null, null);
     }
 
-    public void SetLastAgentMessage(string text, bool isHtml, bool isThinking, bool isStreaming, bool showLoadingTail)
+    public void SetLastAgentResponse(AgentChatResponse response)
+    {
+        var text = !string.IsNullOrWhiteSpace(response.HtmlReply) ? response.HtmlReply : response.Reply;
+        var isHtml = !string.IsNullOrWhiteSpace(response.HtmlReply);
+        SetLastAgentMessage(text, isHtml, false, false, false, response.Actions, response.Verification);
+    }
+
+    public void SetLastAgentMessage(
+        string text,
+        bool isHtml,
+        bool isThinking,
+        bool isStreaming,
+        bool showLoadingTail,
+        IReadOnlyList<AgentChatActionDto>? actions,
+        AgentChatVerificationDto? verification)
     {
         if (Messages.Count == 0)
         {
-            Messages.Add(new ChatLine(false, text, isHtml, isThinking, isStreaming, showLoadingTail));
+            Messages.Add(new ChatLine(false, text, isHtml, isThinking, isStreaming, showLoadingTail, actions?.ToList() ?? new List<AgentChatActionDto>(), verification));
         }
         else
         {
             var last = Messages[^1];
             if (last.IsUser)
             {
-                Messages.Add(new ChatLine(false, text, isHtml, isThinking, isStreaming, showLoadingTail));
+                Messages.Add(new ChatLine(false, text, isHtml, isThinking, isStreaming, showLoadingTail, actions?.ToList() ?? new List<AgentChatActionDto>(), verification));
             }
             else
             {
@@ -117,7 +133,9 @@ public sealed class AgentChatOverlayState
                     IsHtml = isHtml,
                     IsThinking = isThinking,
                     IsStreaming = isStreaming,
-                    ShowLoadingTail = showLoadingTail
+                    ShowLoadingTail = showLoadingTail,
+                    Actions = actions?.ToList() ?? new List<AgentChatActionDto>(),
+                    Verification = verification
                 };
             }
         }
@@ -143,5 +161,7 @@ public sealed class AgentChatOverlayState
         bool IsHtml,
         bool IsThinking = false,
         bool IsStreaming = false,
-        bool ShowLoadingTail = false);
+        bool ShowLoadingTail = false,
+        List<AgentChatActionDto>? Actions = null,
+        AgentChatVerificationDto? Verification = null);
 }

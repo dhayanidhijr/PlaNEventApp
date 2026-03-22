@@ -23,4 +23,11 @@ public sealed class AgentChatController(IAgentCoreChatService service) : Control
     {
         await service.StreamChatAsync(request, Response, cancellationToken);
     }
+
+    [HttpPost("actions/execute")]
+    public async Task<ActionResult<AgentChatResponse>> ExecuteAction(AgentChatActionRequest request, CancellationToken cancellationToken)
+    {
+        var response = await service.ExecuteActionAsync(request, cancellationToken);
+        return Ok(response);
+    }
 }

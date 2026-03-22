@@ -1,12 +1,16 @@
 using System.Net;
 using System.Security.Cryptography;
+using System.Security.Claims;
 using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
 using Amazon.BedrockAgentCore;
 using Amazon.BedrockAgentCore.Model;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using PlaNEvent.Api.Data;
+using PlaNEvent.Api.Models;
 using PlaNEvent.Shared.Contracts;
 
 namespace PlaNEvent.Api.Services;
@@ -15,12 +19,15 @@ public interface IAgentCoreChatService
 {
     Task<AgentChatResponse> ChatAsync(AgentChatRequest request, CancellationToken cancellationToken);
     Task StreamChatAsync(AgentChatRequest request, HttpResponse response, CancellationToken cancellationToken);
+    Task<AgentChatResponse> ExecuteActionAsync(AgentChatActionRequest request, CancellationToken cancellationToken);
 }
 
 public sealed class AgentCoreChatService(
     IAmazonBedrockAgentCore bedrockClient,
     IOptions<AgentCoreOptions> options,
-    IHttpContextAccessor httpContextAccessor) : IAgentCoreChatService
+    IHttpContextAccessor httpContextAccessor,
+    AppDbContext dbContext,
+    IOfferingScheduleService offeringScheduleService) : IAgentCoreChatService
 {
     private readonly AgentCoreOptions optionsValue = options.Value;
 
@@ -30,7 +37,12 @@ public sealed class AgentCoreChatService(
 
         if (string.IsNullOrWhiteSpace(request.Message))
         {
-            return new AgentChatResponse { SessionId = sessionId, Reply = "Please provide a message.", HtmlReply = "<p>Please provide a message.</p>" };
+            return new AgentChatResponse
+            {
+                SessionId = sessionId,
+                Reply = "Please provide a message.",
+                HtmlReply = "<p>Please provide a message.</p>"
+            };
         }
 
         if (string.IsNullOrWhiteSpace(optionsValue.AgentRuntimeArn))
@@ -48,23 +60,11 @@ public sealed class AgentCoreChatService(
         {
             var firstPass = await InvokeAndExtractAsync(request.Message, sessionId, cancellationToken);
             var html = string.IsNullOrWhiteSpace(firstPass.Reply) ? "<p><em>No response from agent.</em></p>" : firstPass.Reply.Trim();
-
-            return new AgentChatResponse
-            {
-                SessionId = firstPass.SessionId,
-                Reply = html,
-                HtmlReply = html
-            };
+            return await BuildChatResponseAsync(request, firstPass.SessionId, html, cancellationToken);
         }
         catch (Exception ex)
         {
-            var message = $"AgentCore call failed: {ex.Message}";
-            return new AgentChatResponse
-            {
-                SessionId = sessionId,
-                Reply = message,
-                HtmlReply = $"<p>{WebUtility.HtmlEncode(message)}</p>"
-            };
+            return ErrorResponse(sessionId, $"AgentCore call failed: {ex.Message}");
         }
     }
 
@@ -101,8 +101,8 @@ public sealed class AgentCoreChatService(
         {
             var streamResult = await StreamFromRuntimeAsync(request.Message, sessionId, response, cancellationToken);
             var htmlReply = string.IsNullOrWhiteSpace(streamResult.Reply) ? "<p><em>No response from agent.</em></p>" : streamResult.Reply.Trim();
-
-            await WriteSseEventAsync(response, "complete", new { sessionId = streamResult.SessionId, reply = htmlReply, htmlReply }, cancellationToken);
+            var responsePayload = await BuildChatResponseAsync(request, streamResult.SessionId, htmlReply, cancellationToken);
+            await WriteSseEventAsync(response, "complete", responsePayload, cancellationToken);
         }
         catch (Exception)
         {
@@ -110,6 +110,7 @@ public sealed class AgentCoreChatService(
             {
                 var result = await InvokeAndExtractAsync(request.Message, sessionId, cancellationToken);
                 var htmlReply = string.IsNullOrWhiteSpace(result.Reply) ? "<p><em>No response from agent.</em></p>" : result.Reply.Trim();
+                var responsePayload = await BuildChatResponseAsync(request, result.SessionId, htmlReply, cancellationToken);
 
                 await WriteSseEventAsync(response, "session", new { sessionId = result.SessionId }, cancellationToken);
                 foreach (var chunk in ChunkTextForStream(htmlReply))
@@ -117,7 +118,7 @@ public sealed class AgentCoreChatService(
                     await WriteSseEventAsync(response, "delta", new { sessionId = result.SessionId, delta = chunk, htmlReply = chunk }, cancellationToken);
                 }
 
-                await WriteSseEventAsync(response, "complete", new { sessionId = result.SessionId, reply = htmlReply, htmlReply }, cancellationToken);
+                await WriteSseEventAsync(response, "complete", responsePayload, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -127,6 +128,36 @@ public sealed class AgentCoreChatService(
                     message = $"AgentCore call failed: {ex.Message}"
                 }, cancellationToken);
             }
+        }
+    }
+
+    public async Task<AgentChatResponse> ExecuteActionAsync(AgentChatActionRequest request, CancellationToken cancellationToken)
+    {
+        var sessionId = NormalizeSessionId(request.SessionId);
+        var ownerId = CurrentUserId();
+        if (string.IsNullOrWhiteSpace(ownerId))
+        {
+            return ErrorResponse(sessionId, "Unable to determine the signed-in user for this action.");
+        }
+
+        if (!string.Equals(request.ActionType, "create_template", StringComparison.OrdinalIgnoreCase))
+        {
+            return ErrorResponse(sessionId, $"Unsupported agent action '{request.ActionType}'.");
+        }
+
+        try
+        {
+            return request.EntityType.ToLowerInvariant() switch
+            {
+                "offering" => await CreateOfferingFromTemplateAsync(sessionId, ownerId, request.TemplateKey, cancellationToken),
+                "category" => await CreateCategoryFromTemplateAsync(sessionId, ownerId, request.TemplateKey, cancellationToken),
+                "showcase_page" => await CreateShowcasePageFromTemplateAsync(sessionId, ownerId, request.TemplateKey, cancellationToken),
+                _ => ErrorResponse(sessionId, $"Unsupported agent entity '{request.EntityType}'.")
+            };
+        }
+        catch (Exception ex)
+        {
+            return ErrorResponse(sessionId, $"Action failed: {ex.Message}");
         }
     }
 
@@ -519,5 +550,520 @@ public sealed class AgentCoreChatService(
         }
 
         return chunks;
+    }
+
+    private async Task<AgentChatResponse> BuildChatResponseAsync(
+        AgentChatRequest request,
+        string sessionId,
+        string htmlReply,
+        CancellationToken cancellationToken)
+    {
+        return new AgentChatResponse
+        {
+            SessionId = sessionId,
+            Reply = htmlReply,
+            HtmlReply = htmlReply,
+            Actions = await BuildSuggestedActionsAsync(request.Message, cancellationToken)
+        };
+    }
+
+    private async Task<List<AgentChatActionDto>> BuildSuggestedActionsAsync(string message, CancellationToken cancellationToken)
+    {
+        var userMessage = ExtractUserMessage(message);
+        var normalized = userMessage.ToLowerInvariant();
+        var actions = new List<AgentChatActionDto>();
+
+        if (LooksLikeCreateRequest(normalized))
+        {
+            if (MentionsOffering(normalized))
+            {
+                actions.AddRange(new[]
+                {
+                    CreateTemplateAction("offering", "private-session", "Create Private Session", "Build a 1:1 weekday offering with a ready-to-book morning slot.", "primary"),
+                    CreateTemplateAction("offering", "team-workshop", "Create Team Workshop", "Build a weekday group workshop with an evening schedule.", "outline-primary"),
+                    CreateTemplateAction("offering", "weekend-bootcamp", "Create Weekend Bootcamp", "Build a weekend offering with a longer session block.", "outline-primary")
+                });
+            }
+            else if (MentionsCategory(normalized))
+            {
+                actions.AddRange(new[]
+                {
+                    CreateTemplateAction("category", "fitness-classes", "Create Fitness Classes", "Create a top-level category for recurring class offerings.", "primary"),
+                    CreateTemplateAction("category", "private-training", "Create Private Training", "Create a category for 1:1 coaching and appointments.", "outline-primary"),
+                    CreateTemplateAction("category", "community-events", "Create Community Events", "Create a category for showcases, open houses, and special events.", "outline-primary")
+                });
+            }
+            else if (MentionsShowcasePage(normalized))
+            {
+                actions.AddRange(new[]
+                {
+                    CreateTemplateAction("showcase_page", "home-booking-page", "Create Home Booking Page", "Create a homepage-style showcase page and set it as home.", "primary"),
+                    CreateTemplateAction("showcase_page", "featured-programs", "Create Featured Programs Page", "Create a page focused on featured offerings or categories.", "outline-primary"),
+                    CreateTemplateAction("showcase_page", "weekend-specials", "Create Weekend Specials Page", "Create a landing page for weekend-focused offerings.", "outline-primary")
+                });
+            }
+        }
+
+        var moduleAction = await BuildModuleActionAsync(normalized, cancellationToken);
+        if (moduleAction is not null && actions.All(x => !string.Equals(x.NavigateUrl, moduleAction.NavigateUrl, StringComparison.OrdinalIgnoreCase)))
+        {
+            actions.Add(moduleAction);
+        }
+
+        if (actions.Count == 0)
+        {
+            actions.Add(NavigateAction("/calendar", "Verify In Calendar", "Open the calendar dashboard and validate the current application state."));
+        }
+
+        return actions;
+    }
+
+    private Task<AgentChatActionDto?> BuildModuleActionAsync(string normalized, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        AgentChatActionDto? action = null;
+        if (MentionsShowcasePage(normalized))
+        {
+            action = NavigateAction("/showcase-pages", "Verify In Showcase Pages", "Open the showcase module and verify the related page data.");
+        }
+        else if (MentionsOffering(normalized))
+        {
+            action = NavigateAction("/offerings", "Verify In Offerings", "Open the offering wizard and verify the related offering details.");
+        }
+        else if (normalized.Contains("calendar", StringComparison.Ordinal))
+        {
+            action = NavigateAction("/calendar", "Verify In Calendar", "Open the calendar dashboard and verify the current schedule.");
+        }
+        else if (normalized.Contains("booking", StringComparison.Ordinal))
+        {
+            action = NavigateAction("/bookings", "Verify In Booking Management", "Open booking management and review the related activity.");
+        }
+
+        return Task.FromResult(action);
+    }
+
+    private async Task<AgentChatResponse> CreateOfferingFromTemplateAsync(
+        string sessionId,
+        string ownerId,
+        string templateKey,
+        CancellationToken cancellationToken)
+    {
+        var template = templateKey.ToLowerInvariant() switch
+        {
+            "private-session" => new
+            {
+                Name = "Private Session",
+                Description = "One-on-one booking experience with a simple weekday schedule.",
+                Color = "#ec3e47",
+                RuleGroupName = "Weekday Availability",
+                Weekdays = new[] { 1, 3, 5 },
+                Start = new TimeSpan(9, 0, 0),
+                End = new TimeSpan(10, 0, 0),
+                RepeatSlots = false,
+                RepeatEveryMinutes = (int?)null,
+                RepeatUntil = (TimeSpan?)null
+            },
+            "team-workshop" => new
+            {
+                Name = "Team Workshop",
+                Description = "A shared evening workshop designed for small groups and recurring cohorts.",
+                Color = "#157f6b",
+                RuleGroupName = "Evening Workshop Schedule",
+                Weekdays = new[] { 2, 4 },
+                Start = new TimeSpan(18, 0, 0),
+                End = new TimeSpan(20, 0, 0),
+                RepeatSlots = false,
+                RepeatEveryMinutes = (int?)null,
+                RepeatUntil = (TimeSpan?)null
+            },
+            "weekend-bootcamp" => new
+            {
+                Name = "Weekend Bootcamp",
+                Description = "A longer-form weekend experience with one highlighted session block.",
+                Color = "#2f80ff",
+                RuleGroupName = "Saturday Sessions",
+                Weekdays = new[] { 6 },
+                Start = new TimeSpan(10, 0, 0),
+                End = new TimeSpan(12, 0, 0),
+                RepeatSlots = false,
+                RepeatEveryMinutes = (int?)null,
+                RepeatUntil = (TimeSpan?)null
+            },
+            _ => throw new InvalidOperationException($"Unknown offering template '{templateKey}'.")
+        };
+
+        var categoryId = await dbContext.Categories
+            .Where(x => x.OwnerId == ownerId && x.IsActive)
+            .OrderBy(x => x.Name)
+            .Select(x => (int?)x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var offering = new Offering
+        {
+            OwnerId = ownerId,
+            CategoryId = categoryId,
+            Name = template.Name,
+            Description = template.Description,
+            Color = template.Color,
+            IsActive = true,
+            AllowNewBookings = true,
+            RuleGroups =
+            {
+                new OfferingRuleGroup
+                {
+                    Name = template.RuleGroupName,
+                    Color = template.Color,
+                    StartDateUtc = DateTime.UtcNow.Date,
+                    FrequencyType = "daysOfWeek",
+                    WeekdaysCsv = string.Join(",", template.Weekdays),
+                    Interval = 1,
+                    Timeslots =
+                    {
+                        new OfferingTimeslot
+                        {
+                            StartTime = template.Start,
+                            EndTime = template.End,
+                            RepeatGeneratedSlots = template.RepeatSlots,
+                            RepeatEveryMinutes = template.RepeatEveryMinutes,
+                            RepeatUntilLastStartTime = template.RepeatUntil
+                        }
+                    }
+                }
+            }
+        };
+
+        dbContext.Offerings.Add(offering);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await offeringScheduleService.RebuildOccurrencesAsync(offering, cancellationToken);
+
+        var refreshed = await dbContext.Offerings
+            .AsNoTracking()
+            .Include(x => x.Category)
+            .Include(x => x.RuleGroups)
+            .ThenInclude(x => x.Timeslots)
+            .FirstAsync(x => x.Id == offering.Id, cancellationToken);
+
+        var firstRuleGroup = refreshed.RuleGroups.OrderBy(x => x.Id).First();
+        var firstTimeslot = firstRuleGroup.Timeslots.OrderBy(x => x.Id).First();
+        var verification = new AgentChatVerificationDto
+        {
+            Title = "Offering Created",
+            Summary = $"'{refreshed.Name}' is ready. You can verify the schedule details below and jump straight into the Offering Wizard.",
+            NavigateLabel = "Open Offering",
+            NavigateUrl = $"/offerings?id={refreshed.Id}",
+            Details =
+            {
+                new AgentChatDetailDto { Label = "Name", Value = refreshed.Name },
+                new AgentChatDetailDto { Label = "Category", Value = refreshed.Category?.Name ?? "Unassigned" },
+                new AgentChatDetailDto { Label = "Rule Group", Value = firstRuleGroup.Name },
+                new AgentChatDetailDto { Label = "Weekdays", Value = string.Join(", ", ParseWeekdayNames(firstRuleGroup.WeekdaysCsv)) },
+                new AgentChatDetailDto { Label = "Timeslot", Value = $"{firstTimeslot.StartTime:hh\\:mm} - {firstTimeslot.EndTime:hh\\:mm}" },
+                new AgentChatDetailDto { Label = "Published", Value = refreshed.IsPublished ? "Yes" : "No" }
+            }
+        };
+
+        return CompleteActionResponse(
+            sessionId,
+            $"Offering '{refreshed.Name}' has been created successfully.",
+            verification,
+            "Open Offerings",
+            "/offerings");
+    }
+
+    private async Task<AgentChatResponse> CreateCategoryFromTemplateAsync(
+        string sessionId,
+        string ownerId,
+        string templateKey,
+        CancellationToken cancellationToken)
+    {
+        var template = templateKey.ToLowerInvariant() switch
+        {
+            "fitness-classes" => new { Name = "Fitness Classes", Color = "#2f80ff", Description = "Best for recurring class-style offerings." },
+            "private-training" => new { Name = "Private Training", Color = "#ec3e47", Description = "Best for 1:1 coaching and appointment-based services." },
+            "community-events" => new { Name = "Community Events", Color = "#157f6b", Description = "Best for showcases, special events, and public sessions." },
+            _ => throw new InvalidOperationException($"Unknown category template '{templateKey}'.")
+        };
+
+        var category = new Category
+        {
+            OwnerId = ownerId,
+            Name = template.Name,
+            Color = template.Color,
+            IsActive = true
+        };
+
+        dbContext.Categories.Add(category);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var verification = new AgentChatVerificationDto
+        {
+            Title = "Category Created",
+            Summary = $"'{category.Name}' is now part of your calendar tree and can be used when you create offerings.",
+            NavigateLabel = "Open Calendar",
+            NavigateUrl = "/calendar",
+            Details =
+            {
+                new AgentChatDetailDto { Label = "Name", Value = category.Name },
+                new AgentChatDetailDto { Label = "Color", Value = category.Color },
+                new AgentChatDetailDto { Label = "Status", Value = category.IsActive ? "Active" : "Inactive" },
+                new AgentChatDetailDto { Label = "Suggested Use", Value = template.Description }
+            }
+        };
+
+        return CompleteActionResponse(
+            sessionId,
+            $"Category '{category.Name}' has been created successfully.",
+            verification,
+            "Open Calendar",
+            "/calendar");
+    }
+
+    private async Task<AgentChatResponse> CreateShowcasePageFromTemplateAsync(
+        string sessionId,
+        string ownerId,
+        string templateKey,
+        CancellationToken cancellationToken)
+    {
+        var template = templateKey.ToLowerInvariant() switch
+        {
+            "home-booking-page" => new { Name = "Home Booking Page", Slug = "home", IsHomePage = true, ItemName = "Browse Offerings", Description = "Use this as the public landing page for bookings." },
+            "featured-programs" => new { Name = "Featured Programs", Slug = "featured-programs", IsHomePage = false, ItemName = "Featured Programs", Description = "Highlight your strongest offerings or categories in one place." },
+            "weekend-specials" => new { Name = "Weekend Specials", Slug = "weekend-specials", IsHomePage = false, ItemName = "Weekend Specials", Description = "Promote weekend-focused classes and events." },
+            _ => throw new InvalidOperationException($"Unknown showcase page template '{templateKey}'.")
+        };
+
+        var page = new ShowcasePage
+        {
+            OwnerId = ownerId,
+            Name = template.Name,
+            Slug = await EnsureUniqueShowcaseSlugAsync(ownerId, Slugify(template.Slug, template.Name), cancellationToken),
+            IsActive = true,
+            IsHomePage = template.IsHomePage
+        };
+
+        var categorySource = await dbContext.Categories
+            .Where(x => x.OwnerId == ownerId && x.IsActive)
+            .OrderBy(x => x.Name)
+            .Select(x => new { x.Id, x.Name })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var offeringSource = await dbContext.Offerings
+            .Where(x => x.OwnerId == ownerId && x.IsActive)
+            .OrderBy(x => x.Name)
+            .Select(x => new { x.Id, x.Name })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (offeringSource is not null || categorySource is not null)
+        {
+            var sourceType = offeringSource is not null ? "offering" : "category";
+            var sourceId = offeringSource?.Id ?? categorySource!.Id;
+            page.Items.Add(new ShowcasePageItem
+            {
+                Name = template.ItemName,
+                SourceType = sourceType,
+                SourceId = sourceId,
+                CarouselType = "carousel",
+                Description = template.Description,
+                ShowDescription = true,
+                IsActive = true,
+                SortOrder = 0
+            });
+        }
+
+        if (page.IsHomePage)
+        {
+            var existingHomePages = await dbContext.ShowcasePages
+                .Where(x => x.OwnerId == ownerId && x.IsHomePage)
+                .ToListAsync(cancellationToken);
+            foreach (var existing in existingHomePages)
+            {
+                existing.IsHomePage = false;
+            }
+        }
+
+        dbContext.ShowcasePages.Add(page);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var publicSlug = await dbContext.Users
+            .Where(x => x.Id == ownerId)
+            .Select(x => x.PublicSlug)
+            .FirstOrDefaultAsync(cancellationToken) ?? "admin";
+
+        var publicPreviewUrl = $"/showcase/{publicSlug}?pageSlug={Uri.EscapeDataString(page.Slug)}";
+        var verification = new AgentChatVerificationDto
+        {
+            Title = "Showcase Page Created",
+            Summary = $"'{page.Name}' is saved and ready for editorial review. You can verify the record details below and then open the editing module.",
+            NavigateLabel = "Open Showcase Page",
+            NavigateUrl = $"/showcase-pages?id={page.Id}",
+            Details =
+            {
+                new AgentChatDetailDto { Label = "Name", Value = page.Name },
+                new AgentChatDetailDto { Label = "Slug", Value = page.Slug },
+                new AgentChatDetailDto { Label = "Home Page", Value = page.IsHomePage ? "Yes" : "No" },
+                new AgentChatDetailDto { Label = "Active", Value = page.IsActive ? "Yes" : "No" },
+                new AgentChatDetailDto { Label = "Public Preview", Value = publicPreviewUrl }
+            }
+        };
+
+        return new AgentChatResponse
+        {
+            SessionId = sessionId,
+            Reply = $"Showcase page '{page.Name}' has been created successfully.",
+            HtmlReply = $"<div><p><strong>Showcase page created.</strong></p><p>{WebUtility.HtmlEncode(page.Name)} is ready. Use the verify button to inspect the saved details or open the public preview.</p></div>",
+            ActionCompleted = true,
+            Verification = verification,
+            Actions =
+            {
+                VerifyAction("Verify Created Page", verification),
+                NavigateAction(publicPreviewUrl, "Preview Public Page", "Open the customer-facing version of the new showcase page.", "outline-primary"),
+                NavigateAction($"/showcase-pages?id={page.Id}", "Open Showcase Pages", "Jump into the showcase admin module for this page.")
+            }
+        };
+    }
+
+    private static AgentChatResponse CompleteActionResponse(
+        string sessionId,
+        string plainTextMessage,
+        AgentChatVerificationDto verification,
+        string moduleLabel,
+        string moduleUrl)
+    {
+        return new AgentChatResponse
+        {
+            SessionId = sessionId,
+            Reply = plainTextMessage,
+            HtmlReply = $"<div><p><strong>Action completed.</strong></p><p>{WebUtility.HtmlEncode(plainTextMessage)} Use the verify button below to review the created record.</p></div>",
+            ActionCompleted = true,
+            Verification = verification,
+            Actions =
+            {
+                VerifyAction($"Verify {verification.Title}", verification),
+                NavigateAction(moduleUrl, moduleLabel, "Open the related module and inspect the record in context.")
+            }
+        };
+    }
+
+    private static AgentChatResponse ErrorResponse(string sessionId, string message)
+    {
+        return new AgentChatResponse
+        {
+            SessionId = sessionId,
+            Reply = message,
+            HtmlReply = $"<p>{WebUtility.HtmlEncode(message)}</p>"
+        };
+    }
+
+    private static AgentChatActionDto CreateTemplateAction(
+        string entityType,
+        string templateKey,
+        string label,
+        string description,
+        string style)
+    {
+        return new AgentChatActionDto
+        {
+            ActionType = "create_template",
+            EntityType = entityType,
+            TemplateKey = templateKey,
+            Label = label,
+            Description = description,
+            Style = style,
+            RequiresExecution = true
+        };
+    }
+
+    private static AgentChatActionDto NavigateAction(string navigateUrl, string label, string description, string style = "secondary")
+    {
+        return new AgentChatActionDto
+        {
+            ActionType = "open_module",
+            Label = label,
+            Description = description,
+            Style = style,
+            NavigateUrl = navigateUrl
+        };
+    }
+
+    private static AgentChatActionDto VerifyAction(string label, AgentChatVerificationDto verification)
+    {
+        return new AgentChatActionDto
+        {
+            ActionType = "show_verification",
+            Label = label,
+            Description = "Open a quick verification dialog with the saved record details.",
+            Style = "success",
+            Verification = verification
+        };
+    }
+
+    private static string ExtractUserMessage(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return string.Empty;
+        }
+
+        var closingTagIndex = message.LastIndexOf("</system>", StringComparison.OrdinalIgnoreCase);
+        return closingTagIndex >= 0
+            ? message[(closingTagIndex + "</system>".Length)..].Trim()
+            : message.Trim();
+    }
+
+    private static bool LooksLikeCreateRequest(string normalized)
+        => normalized.Contains("create", StringComparison.Ordinal)
+            || normalized.Contains("new ", StringComparison.Ordinal)
+            || normalized.Contains("add ", StringComparison.Ordinal)
+            || normalized.Contains("set up", StringComparison.Ordinal)
+            || normalized.Contains("setup", StringComparison.Ordinal);
+
+    private static bool MentionsOffering(string normalized)
+        => normalized.Contains("offering", StringComparison.Ordinal)
+            || normalized.Contains("class", StringComparison.Ordinal)
+            || normalized.Contains("session", StringComparison.Ordinal);
+
+    private static bool MentionsCategory(string normalized)
+        => normalized.Contains("category", StringComparison.Ordinal)
+            || normalized.Contains("tree", StringComparison.Ordinal);
+
+    private static bool MentionsShowcasePage(string normalized)
+        => normalized.Contains("showcase", StringComparison.Ordinal)
+            || normalized.Contains("booking page", StringComparison.Ordinal)
+            || normalized.Contains("public page", StringComparison.Ordinal)
+            || normalized.Contains("page", StringComparison.Ordinal) && normalized.Contains("slug", StringComparison.Ordinal);
+
+    private string CurrentUserId()
+        => httpContextAccessor.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? httpContextAccessor.HttpContext?.User.FindFirstValue("sub")
+            ?? string.Empty;
+
+    private async Task<string> EnsureUniqueShowcaseSlugAsync(string ownerId, string baseSlug, CancellationToken cancellationToken)
+    {
+        var slug = string.IsNullOrWhiteSpace(baseSlug) ? Guid.NewGuid().ToString("N")[..8] : baseSlug;
+        var counter = 2;
+        while (await dbContext.ShowcasePages.AnyAsync(x => x.OwnerId == ownerId && x.Slug == slug, cancellationToken))
+        {
+            slug = $"{baseSlug}-{counter++}";
+        }
+
+        return slug;
+    }
+
+    private static string Slugify(string slug, string fallback)
+    {
+        var value = string.IsNullOrWhiteSpace(slug) ? fallback : slug;
+        var clean = string.Concat(value.Trim().ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-'));
+        clean = string.Join('-', clean.Split('-', StringSplitOptions.RemoveEmptyEntries));
+        return string.IsNullOrWhiteSpace(clean) ? Guid.NewGuid().ToString("N")[..8] : clean;
+    }
+
+    private static IReadOnlyList<string> ParseWeekdayNames(string csv)
+    {
+        return csv.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => int.TryParse(value, out var parsed) ? parsed : -1)
+            .Where(value => value >= 0 && value <= 6)
+            .Select(value => ((DayOfWeek)value).ToString()[..3])
+            .ToList();
     }
 }

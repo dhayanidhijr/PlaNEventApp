@@ -1,9 +1,11 @@
 @implements IDisposable
 @using System.Text.Json
+@using PlaNEvent.Shared.Contracts
 @inject ApiClient Api
 @inject AgentChatOverlayState OverlayState
 @inject IJSRuntime Js
 @inject TokenAuthenticationStateProvider AuthStateProvider
+@inject NavigationManager NavigationManager
 
 @if (OverlayState.IsOpen)
 {
@@ -47,6 +49,18 @@
                             {
                                 <div class="agent-msg-text">@item.Text</div>
                             }
+
+                            @if (item.Actions is { Count: > 0 })
+                            {
+                                <div class="agent-msg-actions">
+                                    @foreach (var action in item.Actions)
+                                    {
+                                        <button type="button" class="btn @ActionButtonClass(action) btn-sm" @onclick="() => HandleActionAsync(action)">
+                                            @action.Label
+                                        </button>
+                                    }
+                                </div>
+                            }
                         </div>
                     }
                 }
@@ -58,6 +72,34 @@
                     <button type="submit" class="btn btn-primary" disabled="@isSending">@(isSending ? "Thinking..." : "Send")</button>
                 </div>
             </EditForm>
+        </div>
+    </div>
+}
+
+@if (activeVerification is not null)
+{
+    <div class="agent-chat-overlay verification-overlay" @onclick="CloseVerificationDialog">
+        <div class="agent-chat-panel verification-panel" @onclick:stopPropagation>
+            <div class="agent-chat-header">
+                <strong>@activeVerification.Title</strong>
+                <button class="btn btn-sm btn-light" @onclick="CloseVerificationDialog">Close</button>
+            </div>
+            <div class="agent-chat-body verification-body">
+                <p class="agent-chat-muted">@activeVerification.Summary</p>
+                <div class="verification-grid">
+                    @foreach (var detail in activeVerification.Details)
+                    {
+                        <div class="verification-item">
+                            <div class="verification-label">@detail.Label</div>
+                            <div class="verification-value">@detail.Value</div>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="verification-footer">
+                <button class="btn btn-outline-secondary" @onclick="CloseVerificationDialog">Close</button>
+                <button class="btn btn-primary" @onclick="NavigateFromVerification">@activeVerification.NavigateLabel</button>
+            </div>
         </div>
     </div>
 }
@@ -83,6 +125,7 @@ Keep the inline styling lightweight and chat-friendly.
     private bool isSending;
     private DotNetObjectReference<AgentChatOverlay>? streamReference;
     private bool shouldAutoScroll;
+    private AgentChatVerificationDto? activeVerification;
 
     protected override void OnInitialized()
     {
@@ -155,8 +198,94 @@ Keep the inline styling lightweight and chat-friendly.
         if (!isSending)
         {
             OverlayState.ClearConversation();
+            activeVerification = null;
         }
     }
+
+    private async Task HandleActionAsync(AgentChatActionDto action)
+    {
+        if (action.RequiresExecution)
+        {
+            if (isSending)
+            {
+                return;
+            }
+
+            OverlayState.AddMessage(new AgentChatOverlayState.ChatLine(true, action.Label, false));
+            OverlayState.BeginAgentMessage();
+            OverlayState.SetLastAgentThinking("Sage is completing that action...");
+            isSending = true;
+
+            try
+            {
+                var response = await Api.AgentChatActionAsync(new AgentChatActionRequest
+                {
+                    SessionId = OverlayState.SessionId,
+                    ActionType = action.ActionType,
+                    EntityType = action.EntityType,
+                    TemplateKey = action.TemplateKey,
+                    Label = action.Label,
+                    SourceMessage = action.Description
+                });
+
+                if (response is null)
+                {
+                    OverlayState.SetLastAgentMessage("Action failed.", false);
+                    return;
+                }
+
+                OverlayState.SessionId = response.SessionId;
+                OverlayState.SetLastAgentResponse(response);
+            }
+            catch (Exception ex)
+            {
+                OverlayState.SetLastAgentMessage($"Error: {ex.Message}", false);
+            }
+            finally
+            {
+                isSending = false;
+            }
+
+            return;
+        }
+
+        if (string.Equals(action.ActionType, "show_verification", StringComparison.OrdinalIgnoreCase) && action.Verification is not null)
+        {
+            activeVerification = action.Verification;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(action.NavigateUrl))
+        {
+            NavigationManager.NavigateTo(action.NavigateUrl, forceLoad: false);
+        }
+    }
+
+    private void CloseVerificationDialog()
+    {
+        activeVerification = null;
+    }
+
+    private void NavigateFromVerification()
+    {
+        if (activeVerification is null || string.IsNullOrWhiteSpace(activeVerification.NavigateUrl))
+        {
+            return;
+        }
+
+        var target = activeVerification.NavigateUrl;
+        activeVerification = null;
+        NavigationManager.NavigateTo(target, forceLoad: false);
+    }
+
+    private static string ActionButtonClass(AgentChatActionDto action) => action.Style switch
+    {
+        "primary" => "btn-primary",
+        "outline-primary" => "btn-outline-primary",
+        "success" => "btn-success",
+        _ => "btn-outline-secondary"
+    };
 
     public void Dispose()
     {
@@ -199,24 +328,12 @@ Keep the inline styling lightweight and chat-friendly.
 
             if (string.Equals(eventName, "complete", StringComparison.OrdinalIgnoreCase))
             {
-                if (root.TryGetProperty("sessionId", out var completeSession) && completeSession.ValueKind == JsonValueKind.String)
+                var response = JsonSerializer.Deserialize<AgentChatResponse>(payloadJson, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                if (response is not null)
                 {
-                    OverlayState.SessionId = completeSession.GetString();
+                    OverlayState.SessionId = response.SessionId;
+                    OverlayState.SetLastAgentResponse(response);
                 }
-
-                if (root.TryGetProperty("reply", out var replyElement) && replyElement.ValueKind == JsonValueKind.String)
-                {
-                    if (root.TryGetProperty("htmlReply", out var htmlReplyElement) && htmlReplyElement.ValueKind == JsonValueKind.String)
-                    {
-                        var htmlReply = htmlReplyElement.GetString() ?? string.Empty;
-                        if (!string.IsNullOrWhiteSpace(htmlReply))
-                        {
-                            OverlayState.SetLastAgentMessage(htmlReply, true);
-                            return InvokeAsync(StateHasChanged);
-                        }
-                    }
-                }
-
                 return InvokeAsync(StateHasChanged);
             }
 

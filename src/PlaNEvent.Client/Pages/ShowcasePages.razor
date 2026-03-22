@@ -146,6 +146,8 @@
 @code {
     private sealed record SourceOption(int Id, string Name);
 
+    [SupplyParameterFromQuery] public int? Id { get; set; }
+
     private List<ShowcasePageSummaryDto> pages = new();
     private List<CategoryDto> categories = new();
     private List<OfferingSummaryDto> offerings = new();
@@ -153,9 +155,13 @@
     private string? status;
     private string profileSlug = string.Empty;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnParametersSetAsync()
     {
         await LoadAsync();
+        if (Id.HasValue)
+        {
+            await SelectPage(Id.Value);
+        }
     }
 
     private async Task LoadAsync()
@@ -176,9 +182,14 @@
         }
 
         editor = loaded;
+        NavigationManager.NavigateTo($"/showcase-pages?id={id}", false);
     }
 
-    private void CreateNew() => editor = NewEditor();
+    private void CreateNew()
+    {
+        editor = NewEditor();
+        NavigationManager.NavigateTo("/showcase-pages", false);
+    }
 
     private void AddItem()
     {
@@ -211,6 +222,7 @@
         if (saved is not null)
         {
             editor = saved;
+            NavigationManager.NavigateTo($"/showcase-pages?id={saved.Id}", false);
         }
     }
 
@@ -224,6 +236,7 @@
         status = await ApiClient.DeleteShowcasePageAsync(editor.Id) ? "Showcase page deleted." : "Delete failed.";
         await LoadAsync();
         editor = NewEditor();
+        NavigationManager.NavigateTo("/showcase-pages", false);
     }
 
     private void PreviewPage()
