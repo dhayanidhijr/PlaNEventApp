@@ -1203,14 +1203,6 @@ public sealed class AgentCoreChatService(
             return metrics;
         }
 
-        var bookingCount = overrideSettings.OverrideExpectedMonthlyBookingCount
-            ? TargetBookingsForPeriod(overrideSettings.ExpectedMonthlyBookingCount, metrics.Period)
-            : metrics.BookingCount;
-
-        var salesAmount = overrideSettings.OverrideExpectedMonthlySalesAmount
-            ? TargetSalesForPeriod(overrideSettings.ExpectedMonthlySalesAmount, metrics.Period)
-            : metrics.SalesAmount;
-
         var overrideFeaturesBySortOrder = overrideSettings.Features
             .Where(x => x.IsOverrideEnabled && !string.IsNullOrWhiteSpace(x.Name))
             .GroupBy(x => x.SortOrder)
@@ -1244,6 +1236,20 @@ public sealed class AgentCoreChatService(
                     TargetSalesForPeriod(overrideFeature.ExpectedMonthlySalesAmount, metrics.Period));
             })
             .ToList();
+
+        var hasFeatureOverrides = overrideFeaturesBySortOrder.Count > 0;
+
+        var bookingCount = overrideSettings.OverrideExpectedMonthlyBookingCount
+            ? TargetBookingsForPeriod(overrideSettings.ExpectedMonthlyBookingCount, metrics.Period)
+            : hasFeatureOverrides
+                ? featureLines.Sum(x => x.ActualBookingCount)
+                : metrics.BookingCount;
+
+        var salesAmount = overrideSettings.OverrideExpectedMonthlySalesAmount
+            ? TargetSalesForPeriod(overrideSettings.ExpectedMonthlySalesAmount, metrics.Period)
+            : hasFeatureOverrides
+                ? featureLines.Sum(x => x.ActualSalesAmount)
+                : metrics.SalesAmount;
 
         return new PeriodMetrics(
             metrics.Period,
