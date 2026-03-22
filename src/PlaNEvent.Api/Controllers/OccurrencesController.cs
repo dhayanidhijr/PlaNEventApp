@@ -15,8 +15,20 @@ namespace PlaNEvent.Api.Controllers;
 public sealed class OccurrencesController(AppDbContext dbContext) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyCollection<OccurrenceDto>>> List([FromQuery] DateTime? startUtc, [FromQuery] DateTime? endUtc)
+    public async Task<ActionResult<OccurrencePageDto>> List([FromQuery] DateTime? startUtc, [FromQuery] DateTime? endUtc, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
+        if (!startUtc.HasValue || !endUtc.HasValue)
+        {
+            return BadRequest("A start and end date filter is required.");
+        }
+
+        page = Math.Max(1, page);
+        pageSize = pageSize switch
+        {
+            10 or 20 or 50 or 100 => pageSize,
+            _ => 20
+        };
+
         var query = dbContext.Occurrences
             .AsNoTracking()
             .Include(x => x.Slots)
@@ -26,13 +38,22 @@ public sealed class OccurrencesController(AppDbContext dbContext) : ControllerBa
             .Include(x => x.RuleGroup)
             .Where(x => x.OwnerId == CurrentUserId());
 
-        if (startUtc.HasValue && endUtc.HasValue)
-        {
-            query = query.Where(x => x.Slots.Any(s => s.StartUtc <= endUtc && s.EndUtc >= startUtc));
-        }
+        query = query.Where(x => x.Slots.Any(s => s.StartUtc <= endUtc && s.EndUtc >= startUtc));
 
-        var occurrences = await query.OrderBy(x => x.Id).ToListAsync();
-        return Ok(occurrences.Select(Map).ToList());
+        var totalCount = await query.CountAsync();
+        var occurrences = await query
+            .OrderBy(x => x.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return Ok(new OccurrencePageDto
+        {
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+            Items = occurrences.Select(Map).ToList()
+        });
     }
 
     [HttpPost]

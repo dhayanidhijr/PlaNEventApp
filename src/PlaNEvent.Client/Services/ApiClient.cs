@@ -12,16 +12,16 @@ public sealed class ApiClient(HttpClient httpClient, TokenAuthenticationStatePro
         return await httpClient.GetFromJsonAsync<UserProfileDto>("api/account/profile");
     }
 
-    public async Task<List<OccurrenceDto>> OccurrencesAsync(DateTime? startUtc = null, DateTime? endUtc = null)
+    public async Task<OccurrencePageDto?> OccurrencesAsync(DateTime? startUtc = null, DateTime? endUtc = null, int page = 1, int pageSize = 20)
     {
         await AttachTokenAsync();
         var query = "api/occurrences";
         if (startUtc.HasValue && endUtc.HasValue)
         {
-            query += $"?startUtc={Uri.EscapeDataString(startUtc.Value.ToString("O"))}&endUtc={Uri.EscapeDataString(endUtc.Value.ToString("O"))}";
+            query += $"?startUtc={Uri.EscapeDataString(startUtc.Value.ToString("O"))}&endUtc={Uri.EscapeDataString(endUtc.Value.ToString("O"))}&page={page}&pageSize={pageSize}";
         }
 
-        return await httpClient.GetFromJsonAsync<List<OccurrenceDto>>(query) ?? new List<OccurrenceDto>();
+        return await httpClient.GetFromJsonAsync<OccurrencePageDto>(query);
     }
 
     public async Task<List<EventGroupDto>> GroupsAsync()
