@@ -1,149 +1,181 @@
 @page "/showcase/{OwnerSlug}"
+@layout PublicLayout
 @inject ApiClient ApiClient
 @inject BookingService BookingService
+@inject IJSRuntime JS
 @inject NavigationManager NavigationManager
 
-<div class="container py-4">
-    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
-        <div>
+<div class="showcase-page">
+    <section class="showcase-hero">
+        <div class="showcase-hero-content">
+            <div class="showcase-kicker">PlaNEvent Booking Showcase</div>
             <h1>@(showcase?.CurrentPageName ?? "Showcase")</h1>
+            <p class="showcase-lead">Browse categories, explore offerings, and complete booking without the internal admin shell.</p>
+
             @if (showcase?.Breadcrumbs.Count > 0)
             {
-                <div class="text-muted">@string.Join(" / ", showcase.Breadcrumbs)</div>
+                <div class="showcase-breadcrumbs">
+                    @foreach (var crumb in showcase.Breadcrumbs)
+                    {
+                        <span>@crumb</span>
+                    }
+                </div>
             }
         </div>
-        <div class="d-flex gap-2 align-items-center">
-            <input class="form-control" style="min-width:240px" placeholder="Search showcase" @bind="searchTerm" @bind:event="oninput" />
-            <button class="btn btn-dark" @onclick="ApplySearch">Search</button>
+
+        <div class="showcase-search-panel">
+            <label class="showcase-search-label" for="showcase-search">Search the showcase</label>
+            <div class="showcase-search-row">
+                <input id="showcase-search" class="form-control showcase-search-input" placeholder="Search categories or offerings" @bind="searchTerm" @bind:event="oninput" />
+                <button class="btn showcase-search-btn" @onclick="ApplySearch">Search</button>
+            </div>
+            <div class="showcase-search-note">Use search, tabs, and carousel rows to move through the booking experience.</div>
         </div>
-    </div>
+    </section>
 
     @if (showcase is null)
     {
-        <p>Loading showcase...</p>
+        <section class="showcase-loading">
+            <p>Loading showcase...</p>
+        </section>
     }
     else
     {
-        <div class="d-flex flex-wrap gap-2 mb-4">
+        <nav class="showcase-tabs" aria-label="Showcase pages">
             @foreach (var tab in showcase.Tabs)
             {
-                <button class="btn @(tab.IsActive ? "btn-dark" : "btn-outline-dark")" @onclick="() => OpenPage(tab.Slug)">@tab.Name</button>
+                <button class="showcase-tab @(tab.IsActive ? "active" : string.Empty)" @onclick="() => OpenPage(tab.Slug)">@tab.Name</button>
             }
-        </div>
+        </nav>
 
         @if (showcase.BookingCalendar is not null)
         {
-            <div class="row g-4">
-                <div class="col-lg-3">
-                    <div class="card">
-                        <div class="card-body">
-                            <h5>Occurrences</h5>
-                            @foreach (var occurrence in showcase.OccurrenceChoices)
+            <section class="booking-shell">
+                <aside class="booking-sidebar">
+                    <div class="booking-sidebar-panel">
+                        <div class="booking-sidebar-title">Choose a schedule</div>
+                        @foreach (var occurrence in showcase.OccurrenceChoices)
+                        {
+                            <button class="booking-choice @(ruleGroupId == occurrence.RuleGroupId ? "active" : string.Empty)" @onclick="() => SelectOccurrence(occurrence.RuleGroupId)">
+                                <span class="booking-choice-dot" style="background:@occurrence.Color"></span>
+                                <span class="booking-choice-copy">
+                                    <strong>@occurrence.Name</strong>
+                                    <small>@FormatDateRange(occurrence.StartDateUtc, occurrence.EndDateUtc)</small>
+                                </span>
+                            </button>
+                        }
+                    </div>
+                </aside>
+
+                <section class="booking-calendar-panel">
+                    <div class="booking-calendar-header">
+                        <div>
+                            <h2>@showcase.BookingCalendar.Title</h2>
+                            <p>@showcase.BookingCalendar.SelectedOccurrenceName</p>
+                        </div>
+                        <div class="booking-view-switch">
+                            @foreach (var option in new[] { "list", "month" })
                             {
-                                <button class="btn w-100 text-start mb-2 @(ruleGroupId == occurrence.RuleGroupId ? "btn-primary" : "btn-outline-secondary")" @onclick="() => SelectOccurrence(occurrence.RuleGroupId)">
-                                    <div class="d-flex align-items-center gap-2">
-                                        <span class="tree-dot" style="background:@occurrence.Color"></span>
-                                        <span>@occurrence.Name</span>
-                                    </div>
-                                    <small>@occurrence.StartDateUtc?.ToShortDateString() - @occurrence.EndDateUtc?.ToShortDateString()</small>
-                                </button>
+                                <button class="@(calendarView == option ? "active" : string.Empty)" @onclick='() => calendarView = option'>@option</button>
                             }
                         </div>
                     </div>
-                </div>
-                <div class="col-lg-9">
-                    <div class="card">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <div>
-                                    <h4 class="mb-0">@showcase.BookingCalendar.Title</h4>
-                                    <small>@showcase.BookingCalendar.SelectedOccurrenceName</small>
-                                </div>
-                                <div class="d-flex gap-2">
-                                    @foreach (var option in new[] { "list", "month" })
-                                    {
-                                        <button class="btn @(calendarView == option ? "btn-dark" : "btn-outline-dark")" @onclick='() => calendarView = option'>@option</button>
-                                    }
-                                </div>
-                            </div>
 
-                            @if (calendarView == "list")
+                    @if (calendarView == "list")
+                    {
+                        <div class="booking-list">
+                            @foreach (var occurrence in showcase.BookingCalendar.Occurrences)
                             {
-                                @foreach (var occurrence in showcase.BookingCalendar.Occurrences)
-                                {
-                                    <div class="border rounded p-3 mb-3">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <strong>@occurrence.Title</strong>
-                                                <div class="text-muted">@occurrence.RuleGroupName</div>
-                                            </div>
-                                            <span class="tree-dot" style="background:@occurrence.Color"></span>
+                                <article class="booking-card">
+                                    <div class="booking-card-head">
+                                        <div>
+                                            <h3>@occurrence.Title</h3>
+                                            <p>@occurrence.RuleGroupName</p>
                                         </div>
-                                        <ul class="mt-3 mb-0">
-                                            @foreach (var slot in occurrence.Slots)
-                                            {
-                                                <li class="mb-2">
-                                                    @slot.StartUtc.ToLocalTime() - @slot.EndUtc.ToLocalTime()
-                                                    <button class="btn btn-sm btn-primary ms-2" @onclick="() => Book(occurrence.Id, slot.Id)">Book</button>
-                                                </li>
-                                            }
-                                        </ul>
+                                        <span class="booking-choice-dot" style="background:@occurrence.Color"></span>
+                                    </div>
+
+                                    <div class="booking-slot-list">
+                                        @foreach (var slot in occurrence.Slots)
+                                        {
+                                            <div class="booking-slot">
+                                                <div>
+                                                    <strong>@slot.StartUtc.ToLocalTime().ToString("MMM dd, yyyy")</strong>
+                                                    <span>@slot.StartUtc.ToLocalTime().ToString("hh:mm tt") - @slot.EndUtc.ToLocalTime().ToString("hh:mm tt")</span>
+                                                </div>
+                                                <button class="btn btn-primary" @onclick="() => Book(occurrence.Id, slot.Id)">Book</button>
+                                            </div>
+                                        }
+                                    </div>
+                                </article>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="showcase-month-shell">
+                            <div class="week-head">
+                                <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+                            </div>
+                            <div class="month-grid">
+                                @foreach (var day in DaysInMonth())
+                                {
+                                    <div class="day-cell">
+                                        <div class="day-num">@day.Day</div>
+                                        @foreach (var occurrence in showcase.BookingCalendar.Occurrences.Where(x => x.Slots.Any(s => s.StartUtc.Date == day.Date)).Take(3))
+                                        {
+                                            <div class="event-chip" style="background:@occurrence.Color">@occurrence.Title</div>
+                                        }
                                     </div>
                                 }
-                            }
-                            else
-                            {
-                                <div class="week-head">
-                                    <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
-                                </div>
-                                <div class="month-grid">
-                                    @foreach (var day in DaysInMonth())
-                                    {
-                                        <div class="day-cell">
-                                            <div class="day-num">@day.Day</div>
-                                            @foreach (var occurrence in showcase.BookingCalendar.Occurrences.Where(x => x.Slots.Any(s => s.StartUtc.Date == day.Date)).Take(3))
-                                            {
-                                                <div class="event-chip" style="background:@occurrence.Color">@occurrence.Title</div>
-                                            }
-                                        </div>
-                                    }
-                                </div>
-                            }
+                            </div>
                         </div>
-                    </div>
-                </div>
-            </div>
+                    }
+                </section>
+            </section>
         }
         else
         {
-            @foreach (var row in showcase.Rows)
+            @for (var index = 0; index < showcase.Rows.Count; index++)
             {
-                <section class="mb-5">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h4 class="mb-0">@row.Name</h4>
-                        <small class="text-muted">@row.CarouselType</small>
+                var row = showcase.Rows.ElementAt(index);
+                var railId = $"showcase-rail-{index}";
+
+                <section class="showcase-row-section">
+                    <div class="showcase-row-header">
+                        <div>
+                            <h2>@row.Name</h2>
+                            <p>@(row.CarouselType == "rail" ? "Swipe through the collection" : "Featured picks from this row")</p>
+                        </div>
+                        <div class="showcase-row-controls">
+                            <button type="button" class="showcase-arrow" @onclick="() => ScrollRailAsync(railId, -1)" aria-label="Previous cards">&#10094;</button>
+                            <button type="button" class="showcase-arrow" @onclick="() => ScrollRailAsync(railId, 1)" aria-label="Next cards">&#10095;</button>
+                        </div>
                     </div>
-                    <div class="row g-3">
+
+                    <div id="@railId" class="showcase-rail @(row.CarouselType == "rail" ? "compact" : string.Empty)">
                         @foreach (var card in row.Cards)
                         {
-                            <div class="col-md-6 col-xl-4">
-                                <button class="card h-100 w-100 text-start border-0" @onclick="() => OpenCard(card)">
-                                    <div class="card-body" style="background:linear-gradient(135deg, @card.AccentColor, #0f172a); color:white; border-radius:0.5rem;">
-                                        @if (!string.IsNullOrWhiteSpace(card.ImageUrl))
-                                        {
-                                            <div class="mb-3" style="height:120px; background:url('@card.ImageUrl') center/cover; border-radius:0.5rem; filter:@(card.Blur ? "blur(2px)" : "none");"></div>
-                                        }
+                            <button type="button" class="showcase-card" @onclick="() => OpenCard(card)">
+                                <div class="showcase-card-media" style="@CardBackgroundStyle(card)">
+                                    @if (!string.IsNullOrWhiteSpace(card.ImageUrl))
+                                    {
+                                        <div class="showcase-card-image @(card.Blur ? "blurred" : string.Empty)" style="background-image:url('@card.ImageUrl');"></div>
+                                    }
+                                    <div class="showcase-card-overlay"></div>
+                                    <div class="showcase-card-badge">@(card.CardType == "category" ? "Category" : "Offering")</div>
+                                    <div class="showcase-card-copy">
                                         @if (!card.HideTitle)
                                         {
-                                            <h5>@card.Title</h5>
+                                            <h3>@card.Title</h3>
                                         }
                                         @if (card.ShowDescription)
                                         {
-                                            <p class="mb-0">@card.Description</p>
+                                            <p>@card.Description</p>
                                         }
                                     </div>
-                                </button>
-                            </div>
+                                </div>
+                            </button>
                         }
                     </div>
                 </section>
@@ -152,7 +184,7 @@
 
         @if (!string.IsNullOrWhiteSpace(status))
         {
-            <div class="alert alert-info mt-4">@status</div>
+            <div class="showcase-status">@status</div>
         }
     }
 </div>
@@ -213,6 +245,27 @@
     {
         var ok = await BookingService.BookAsync(occurrenceId, slotId, "Booked from showcase");
         status = ok ? "Booking placed successfully." : "Booking failed. Sign in as a customer or standard user.";
+    }
+
+    private Task ScrollRailAsync(string railId, int direction)
+        => JS.InvokeVoidAsync("showcaseUi.scrollRail", railId, direction).AsTask();
+
+    private static string CardBackgroundStyle(PublicShowcaseCardDto card)
+        => $"background:linear-gradient(145deg, {card.AccentColor}, #0f172a);";
+
+    private static string FormatDateRange(DateTime? startUtc, DateTime? endUtc)
+    {
+        if (!startUtc.HasValue && !endUtc.HasValue)
+        {
+            return "Schedule available";
+        }
+
+        if (startUtc.HasValue && endUtc.HasValue)
+        {
+            return $"{startUtc.Value.ToLocalTime():MMM dd, yyyy} - {endUtc.Value.ToLocalTime():MMM dd, yyyy}";
+        }
+
+        return startUtc?.ToLocalTime().ToString("MMM dd, yyyy") ?? endUtc?.ToLocalTime().ToString("MMM dd, yyyy") ?? "Schedule available";
     }
 
     private IEnumerable<DateTime> DaysInMonth()
