@@ -25,6 +25,8 @@ public sealed class PublicSalesController(AppDbContext dbContext) : ControllerBa
             .Include(x => x.Slots)
             .Include(x => x.EventGroup)
             .Include(x => x.Staff)
+            .Include(x => x.Offering)
+            .Include(x => x.RuleGroup)
             .Where(x => x.OwnerId == owner.Id && x.IsPublished)
             .OrderBy(x => x.Title)
             .ToListAsync();
@@ -32,12 +34,17 @@ public sealed class PublicSalesController(AppDbContext dbContext) : ControllerBa
         var list = occurrences.Select(x => new OccurrenceDto
         {
             Id = x.Id,
+            OfferingId = x.OfferingId,
+            RuleGroupId = x.RuleGroupId,
             Title = x.Title,
             Description = x.Description,
             EventGroupId = x.EventGroupId,
             StaffId = x.StaffId,
             EventGroupName = x.EventGroup?.Name,
             StaffName = x.Staff?.Name,
+            OfferingName = x.Offering?.Name,
+            RuleGroupName = x.RuleGroup?.Name,
+            Color = x.Color,
             IsPublished = true,
             OwnerPublicSlug = ownerSlug,
             Slots = x.Slots.Select(s => new OccurrenceSlotDto

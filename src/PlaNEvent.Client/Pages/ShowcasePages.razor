@@ -1,0 +1,249 @@
+@page "/showcase-pages"
+@attribute [Authorize]
+@inject ApiClient ApiClient
+@inject NavigationManager NavigationManager
+
+<div class="module-header">
+    <div>
+        <h1 class="page-title">Showcase Editorial Admin</h1>
+        <p class="subtitle">Public pages, navigation tabs, and carousel/list rows.</p>
+    </div>
+    <button class="btn btn-light" @onclick="CreateNew">Add Page</button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(status))
+{
+    <div class="alert alert-info">@status</div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="mb-0">Booking Pages</h4>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="LoadAsync">Refresh</button>
+                </div>
+                @foreach (var page in pages)
+                {
+                    <button class="btn w-100 text-start mb-2 @(editor.Id == page.Id ? "btn-primary" : "btn-outline-secondary")" @onclick="() => SelectPage(page.Id)">
+                        <div>@(page.Name)</div>
+                        <small>@(page.Slug) @(page.IsHomePage ? "| Home" : string.Empty)</small>
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body">
+                <h4>@(editor.Id == 0 ? "Manage Page" : $"Manage Page: {editor.Name}")</h4>
+                <div class="row g-3 mt-1">
+                    <div class="col-md-6">
+                        <label>Name</label>
+                        <InputText class="form-control" @bind-Value="editor.Name" />
+                    </div>
+                    <div class="col-md-6">
+                        <label>Slug</label>
+                        <InputText class="form-control" @bind-Value="editor.Slug" />
+                    </div>
+                    <div class="col-md-4 form-check ms-2">
+                        <InputCheckbox class="form-check-input" @bind-Value="editor.IsActive" />
+                        <label class="form-check-label">Active</label>
+                    </div>
+                    <div class="col-md-4 form-check ms-2">
+                        <InputCheckbox class="form-check-input" @bind-Value="editor.IsHomePage" />
+                        <label class="form-check-label">Home Page</label>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center mt-4 mb-3">
+                    <h5 class="mb-0">Booking Data Rows</h5>
+                    <button class="btn btn-sm btn-outline-primary" @onclick="AddItem">Add Page Data</button>
+                </div>
+
+                @foreach (var item in editor.Items.OrderBy(x => x.SortOrder))
+                {
+                    <div class="border rounded p-3 mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <strong>@(string.IsNullOrWhiteSpace(item.Name) ? "New Row" : item.Name)</strong>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveItem(item)">Remove</button>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label>Name</label>
+                                <InputText class="form-control" @bind-Value="item.Name" />
+                            </div>
+                            <div class="col-md-3">
+                                <label>Source Type</label>
+                                <select class="form-select" @bind="item.SourceType">
+                                    <option value="category">Category</option>
+                                    <option value="offering">Offering</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label>Carousel Type</label>
+                                <select class="form-select" @bind="item.CarouselType">
+                                    <option value="carousel">Carousel</option>
+                                    <option value="rail">Rail</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label>Source</label>
+                                <select class="form-select" @bind="item.SourceId">
+                                    @foreach (var option in SourceOptions(item.SourceType))
+                                    {
+                                        <option value="@option.Id">@option.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label>Sort Order</label>
+                                <InputNumber class="form-control" @bind-Value="item.SortOrder" />
+                            </div>
+                            <div class="col-md-3 form-check ms-2">
+                                <InputCheckbox class="form-check-input" @bind-Value="item.IsActive" />
+                                <label class="form-check-label">Active</label>
+                            </div>
+                            <div class="col-12">
+                                <label>Description</label>
+                                <InputTextArea class="form-control" @bind-Value="item.Description" />
+                            </div>
+                            <div class="col-md-4 form-check ms-2">
+                                <InputCheckbox class="form-check-input" @bind-Value="item.Blur" />
+                                <label class="form-check-label">Blur</label>
+                            </div>
+                            <div class="col-md-4 form-check ms-2">
+                                <InputCheckbox class="form-check-input" @bind-Value="item.HideTitle" />
+                                <label class="form-check-label">Hide Title</label>
+                            </div>
+                            <div class="col-md-4 form-check ms-2">
+                                <InputCheckbox class="form-check-input" @bind-Value="item.ShowDescription" />
+                                <label class="form-check-label">Show Description</label>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="d-flex justify-content-between mt-4">
+                    <div>
+                        @if (editor.Id != 0)
+                        {
+                            <button class="btn btn-outline-danger" @onclick="DeletePage">Delete</button>
+                        }
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-dark" disabled="@string.IsNullOrWhiteSpace(profileSlug)" @onclick="PreviewPage">Preview</button>
+                        <button class="btn btn-primary" @onclick="SavePage">Save Page</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private sealed record SourceOption(int Id, string Name);
+
+    private List<ShowcasePageSummaryDto> pages = new();
+    private List<CategoryDto> categories = new();
+    private List<OfferingSummaryDto> offerings = new();
+    private ShowcasePageEditorDto editor = NewEditor();
+    private string? status;
+    private string profileSlug = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        pages = await ApiClient.ShowcasePagesAsync();
+        categories = await ApiClient.CategoriesAsync();
+        offerings = await ApiClient.OfferingsSummaryAsync();
+        profileSlug = (await ApiClient.MyProfileAsync())?.PublicSlug ?? string.Empty;
+    }
+
+    private async Task SelectPage(int id)
+    {
+        var loaded = await ApiClient.ShowcasePageAsync(id);
+        if (loaded is null)
+        {
+            status = "Unable to load showcase page.";
+            return;
+        }
+
+        editor = loaded;
+    }
+
+    private void CreateNew() => editor = NewEditor();
+
+    private void AddItem()
+    {
+        editor.Items.Add(new ShowcasePageItemDto
+        {
+            SourceType = "category",
+            CarouselType = "carousel",
+            ShowDescription = true,
+            IsActive = true,
+            SortOrder = editor.Items.Count
+        });
+    }
+
+    private void RemoveItem(ShowcasePageItemDto item) => editor.Items.Remove(item);
+
+    private async Task SavePage()
+    {
+        var saved = await ApiClient.SaveShowcasePageAsync(new SaveShowcasePageRequest
+        {
+            Id = editor.Id == 0 ? null : editor.Id,
+            Name = editor.Name,
+            Slug = editor.Slug,
+            IsActive = editor.IsActive,
+            IsHomePage = editor.IsHomePage,
+            Items = editor.Items
+        });
+
+        status = saved is null ? "Showcase page save failed." : "Showcase page saved.";
+        await LoadAsync();
+        if (saved is not null)
+        {
+            editor = saved;
+        }
+    }
+
+    private async Task DeletePage()
+    {
+        if (editor.Id == 0)
+        {
+            return;
+        }
+
+        status = await ApiClient.DeleteShowcasePageAsync(editor.Id) ? "Showcase page deleted." : "Delete failed.";
+        await LoadAsync();
+        editor = NewEditor();
+    }
+
+    private void PreviewPage()
+    {
+        if (string.IsNullOrWhiteSpace(profileSlug))
+        {
+            return;
+        }
+
+        NavigationManager.NavigateTo($"/showcase/{profileSlug}?pageSlug={Uri.EscapeDataString(editor.Slug)}", true);
+    }
+
+    private IEnumerable<SourceOption> SourceOptions(string sourceType)
+        => sourceType == "offering"
+            ? offerings.Select(x => new SourceOption(x.Id, x.Name))
+            : categories.Select(x => new SourceOption(x.Id, x.Name));
+
+    private static ShowcasePageEditorDto NewEditor() => new()
+    {
+        IsActive = true,
+        Items = new List<ShowcasePageItemDto>()
+    };
+}

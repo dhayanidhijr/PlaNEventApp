@@ -1,0 +1,457 @@
+@page "/offerings"
+@attribute [Authorize]
+@inject ApiClient ApiClient
+@inject NavigationManager NavigationManager
+
+<div class="module-header">
+    <div>
+        <h1 class="page-title">Offering Wizard</h1>
+        <p class="subtitle">General info, rule groups, and timeslots.</p>
+    </div>
+    <button class="btn btn-light" @onclick="CreateNew">New Offering</button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(status))
+{
+    <div class="alert alert-info">@status</div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="mb-0">Offerings</h4>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="LoadAsync">Refresh</button>
+                </div>
+                @foreach (var item in offerings)
+                {
+                    <button class="btn w-100 text-start mb-2 @(editor.Id == item.Id ? "btn-primary" : "btn-outline-secondary")" @onclick="() => SelectOffering(item.Id)">
+                        <div>@item.Name</div>
+                        <small>@item.CategoryName</small>
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h4 class="mb-0">@((editor.Id == 0 ? "Create Offering" : "Edit Offering"))</h4>
+                        <small class="text-muted">Step @step of 3</small>
+                    </div>
+                    <div class="d-flex gap-2">
+                        @foreach (var value in Enumerable.Range(1, 3))
+                        {
+                            <button class="btn @(step == value ? "btn-dark" : "btn-outline-dark")" @onclick="() => step = value">@(value switch { 1 => "General Info", 2 => "Manage Rule Groups", _ => "Manage Timeslots" })</button>
+                        }
+                    </div>
+                </div>
+
+                @if (step == 1)
+                {
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label>Name</label>
+                            <InputText class="form-control" @bind-Value="editor.Name" />
+                        </div>
+                        <div class="col-md-6">
+                            <label>Category</label>
+                            <select class="form-select" @bind="editor.CategoryId">
+                                <option value="">(None)</option>
+                                @foreach (var category in categories)
+                                {
+                                    <option value="@category.Id">@category.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label>Color</label>
+                            <InputText class="form-control" @bind-Value="editor.Color" />
+                        </div>
+                        <div class="col-md-6">
+                            <label>Cover Image URL</label>
+                            <InputText class="form-control" @bind-Value="editor.CoverImageUrl" />
+                        </div>
+                        <div class="col-12">
+                            <label>Description</label>
+                            <InputTextArea class="form-control" @bind-Value="editor.Description" />
+                        </div>
+                        <div class="col-md-4 form-check ms-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="editor.IsPublished" />
+                            <label class="form-check-label">Published</label>
+                        </div>
+                        <div class="col-md-4 form-check ms-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="editor.IsActive" />
+                            <label class="form-check-label">Active</label>
+                        </div>
+                        <div class="col-md-4 form-check ms-2">
+                            <InputCheckbox class="form-check-input" @bind-Value="editor.AllowNewBookings" />
+                            <label class="form-check-label">Allow New Bookings</label>
+                        </div>
+                        <div class="col-md-6">
+                            <label>Limit Booking Period (days)</label>
+                            <InputNumber class="form-control" @bind-Value="editor.LimitBookingPeriodDays" />
+                        </div>
+                        <div class="col-md-6 form-check mt-4">
+                            <InputCheckbox class="form-check-input" @bind-Value="editor.RequireSignUpEveryTime" />
+                            <label class="form-check-label">Clients must sign up every time</label>
+                        </div>
+                    </div>
+                }
+
+                @if (step == 2)
+                {
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0">Rule Groups</h5>
+                        <button class="btn btn-sm btn-outline-primary" @onclick="AddRuleGroup">Add Rule Group</button>
+                    </div>
+
+                    @foreach (var ruleGroup in editor.RuleGroups)
+                    {
+                        <div class="border rounded p-3 mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <strong>@(string.IsNullOrWhiteSpace(ruleGroup.Name) ? "New Rule Group" : ruleGroup.Name)</strong>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveRuleGroup(ruleGroup)">Remove</button>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label>Name</label>
+                                    <InputText class="form-control" @bind-Value="ruleGroup.Name" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label>Color</label>
+                                    <InputText class="form-control" @bind-Value="ruleGroup.Color" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label>Start Date</label>
+                                    <InputDate class="form-control" @bind-Value="ruleGroup.StartDateUtc" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label>End Date</label>
+                                    <InputDate class="form-control" @bind-Value="ruleGroup.EndDateUtc" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label>Frequency</label>
+                                    <select class="form-select" @bind="ruleGroup.FrequencyType">
+                                        <option value="daysOfWeek">Days Of Week</option>
+                                        <option value="nthWeekOfMonth">Nth Week Of Month</option>
+                                        <option value="everyDay">Every Day</option>
+                                        <option value="nthDayOfMonth">Nth Day Of Month</option>
+                                        <option value="everyNthDay">Every Nth Day</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label>Interval</label>
+                                    <InputNumber class="form-control" @bind-Value="ruleGroup.Interval" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label>Nth Week</label>
+                                    <InputNumber class="form-control" @bind-Value="ruleGroup.NthWeekOfMonth" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label>Day Of Month</label>
+                                    <InputNumber class="form-control" @bind-Value="ruleGroup.DayOfMonth" />
+                                </div>
+                                <div class="col-12">
+                                    <label class="d-block">Weekdays</label>
+                                    <div class="d-flex flex-wrap gap-3">
+                                        @for (var day = 0; day < 7; day++)
+                                        {
+                                            var currentDay = day;
+                                            <label class="form-check-label">
+                                                <input type="checkbox" class="form-check-input me-1" checked="@ruleGroup.Weekdays.Contains(currentDay)" @onchange="args => ToggleWeekday(ruleGroup, currentDay, args.Value)" />
+                                                @DayName(currentDay)
+                                            </label>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+
+                @if (step == 3)
+                {
+                    @if (editor.RuleGroups.Count == 0)
+                    {
+                        <p class="text-muted">Add at least one rule group before configuring timeslots.</p>
+                    }
+                    else
+                    {
+                        @foreach (var ruleGroup in editor.RuleGroups)
+                        {
+                            <div class="border rounded p-3 mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <div>
+                                        <strong>@ruleGroup.Name</strong>
+                                        <div class="text-muted small">@ruleGroup.FrequencyType</div>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => AddTimeslot(ruleGroup)">Add Timeslot</button>
+                                </div>
+
+                                @foreach (var timeslot in ruleGroup.Timeslots)
+                                {
+                                    <div class="row g-3 align-items-end border-top pt-3 mt-2">
+                                        <div class="col-md-2 form-check ms-2">
+                                            <InputCheckbox class="form-check-input" @bind-Value="timeslot.IsAllDay" />
+                                            <label class="form-check-label">All Day</label>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label>Start Time</label>
+                                            <InputText class="form-control" @bind-Value="timeslotStartInputs[timeslot]" />
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label>End Time</label>
+                                            <InputText class="form-control" @bind-Value="timeslotEndInputs[timeslot]" />
+                                        </div>
+                                        <div class="col-md-2 form-check ms-2">
+                                            <InputCheckbox class="form-check-input" @bind-Value="timeslot.RepeatGeneratedSlots" />
+                                            <label class="form-check-label">Repeat Slots</label>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label>Repeat Every (minutes)</label>
+                                            <InputNumber class="form-control" @bind-Value="timeslot.RepeatEveryMinutes" />
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label>Until Last Start</label>
+                                            <InputText class="form-control" @bind-Value="timeslotRepeatUntilInputs[timeslot]" />
+                                        </div>
+                                        <div class="col-md-2">
+                                            <button class="btn btn-outline-danger w-100" @onclick="() => RemoveTimeslot(ruleGroup, timeslot)">Remove</button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                }
+
+                <div class="d-flex justify-content-between mt-4">
+                    <div>
+                        @if (editor.Id != 0)
+                        {
+                            <button class="btn btn-outline-danger" @onclick="DeleteOffering">Delete</button>
+                        }
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-light" disabled="@(step == 1)" @onclick="PrevStep">Back</button>
+                        @if (step < 3)
+                        {
+                            <button class="btn btn-primary" @onclick="NextStep">Next</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-primary" @onclick="SaveOffering">Save Offering</button>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public int? Id { get; set; }
+
+    private List<CategoryDto> categories = new();
+    private List<OfferingSummaryDto> offerings = new();
+    private OfferingEditorDto editor = NewEditor();
+    private int step = 1;
+    private string? status;
+    private readonly Dictionary<TimeslotEditorDto, string> timeslotStartInputs = new();
+    private readonly Dictionary<TimeslotEditorDto, string> timeslotEndInputs = new();
+    private readonly Dictionary<TimeslotEditorDto, string> timeslotRepeatUntilInputs = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+        if (Id.HasValue)
+        {
+            await SelectOffering(Id.Value);
+        }
+        else if (editor.Id == 0 && offerings.Count > 0)
+        {
+            // keep blank editor on new route
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        categories = await ApiClient.CategoriesAsync();
+        offerings = await ApiClient.OfferingsSummaryAsync();
+    }
+
+    private async Task SelectOffering(int id)
+    {
+        var loaded = await ApiClient.OfferingAsync(id);
+        if (loaded is null)
+        {
+            status = "Unable to load offering.";
+            return;
+        }
+
+        editor = loaded;
+        step = 1;
+        SyncTimeInputs();
+        NavigationManager.NavigateTo($"/offerings?id={id}", false);
+    }
+
+    private void CreateNew()
+    {
+        editor = NewEditor();
+        SyncTimeInputs();
+        step = 1;
+        NavigationManager.NavigateTo("/offerings", false);
+    }
+
+    private void AddRuleGroup()
+    {
+        editor.RuleGroups.Add(new RuleGroupEditorDto
+        {
+            Name = "New Rule Group",
+            Color = editor.Color,
+            StartDateUtc = DateTime.UtcNow.Date,
+            FrequencyType = "daysOfWeek",
+            Weekdays = new List<int> { 1, 3, 5 },
+            Interval = 1
+        });
+    }
+
+    private void RemoveRuleGroup(RuleGroupEditorDto ruleGroup) => editor.RuleGroups.Remove(ruleGroup);
+
+    private void AddTimeslot(RuleGroupEditorDto ruleGroup)
+    {
+        var timeslot = new TimeslotEditorDto
+        {
+            StartTime = new TimeSpan(9, 0, 0),
+            EndTime = new TimeSpan(10, 0, 0)
+        };
+        ruleGroup.Timeslots.Add(timeslot);
+        RegisterTimeslot(timeslot);
+    }
+
+    private void RemoveTimeslot(RuleGroupEditorDto ruleGroup, TimeslotEditorDto timeslot)
+    {
+        ruleGroup.Timeslots.Remove(timeslot);
+        timeslotStartInputs.Remove(timeslot);
+        timeslotEndInputs.Remove(timeslot);
+        timeslotRepeatUntilInputs.Remove(timeslot);
+    }
+
+    private void ToggleWeekday(RuleGroupEditorDto ruleGroup, int weekday, object? value)
+    {
+        var isChecked = value as bool? ?? false;
+        if (isChecked)
+        {
+            if (!ruleGroup.Weekdays.Contains(weekday))
+            {
+                ruleGroup.Weekdays.Add(weekday);
+            }
+        }
+        else
+        {
+            ruleGroup.Weekdays.Remove(weekday);
+        }
+    }
+
+    private void NextStep() => step = Math.Min(step + 1, 3);
+
+    private void PrevStep() => step = Math.Max(step - 1, 1);
+
+    private async Task SaveOffering()
+    {
+        ApplyTimeslotInputs();
+        var saved = await ApiClient.SaveOfferingAsync(new SaveOfferingRequest
+        {
+            Id = editor.Id == 0 ? null : editor.Id,
+            CategoryId = editor.CategoryId,
+            Name = editor.Name,
+            Description = editor.Description,
+            Color = editor.Color,
+            CoverImageUrl = editor.CoverImageUrl,
+            IsPublished = editor.IsPublished,
+            IsActive = editor.IsActive,
+            AllowNewBookings = editor.AllowNewBookings,
+            LimitBookingPeriodDays = editor.LimitBookingPeriodDays,
+            RequireSignUpEveryTime = editor.RequireSignUpEveryTime,
+            RuleGroups = editor.RuleGroups
+        });
+
+        status = saved is null ? "Offering save failed." : "Offering saved and occurrences regenerated.";
+        await LoadAsync();
+        if (saved is not null)
+        {
+            editor = saved;
+            SyncTimeInputs();
+            NavigationManager.NavigateTo($"/offerings?id={saved.Id}", false);
+        }
+    }
+
+    private async Task DeleteOffering()
+    {
+        if (editor.Id == 0)
+        {
+            return;
+        }
+
+        status = await ApiClient.DeleteOfferingAsync(editor.Id) ? "Offering deleted." : "Offering delete failed.";
+        await LoadAsync();
+        CreateNew();
+    }
+
+    private void SyncTimeInputs()
+    {
+        timeslotStartInputs.Clear();
+        timeslotEndInputs.Clear();
+        timeslotRepeatUntilInputs.Clear();
+        foreach (var timeslot in editor.RuleGroups.SelectMany(x => x.Timeslots))
+        {
+            RegisterTimeslot(timeslot);
+        }
+    }
+
+    private void RegisterTimeslot(TimeslotEditorDto timeslot)
+    {
+        timeslotStartInputs[timeslot] = timeslot.StartTime.ToString(@"hh\:mm");
+        timeslotEndInputs[timeslot] = timeslot.EndTime.ToString(@"hh\:mm");
+        timeslotRepeatUntilInputs[timeslot] = timeslot.RepeatUntilLastStartTime?.ToString(@"hh\:mm") ?? string.Empty;
+    }
+
+    private void ApplyTimeslotInputs()
+    {
+        foreach (var timeslot in editor.RuleGroups.SelectMany(x => x.Timeslots))
+        {
+            if (TimeSpan.TryParse(timeslotStartInputs.GetValueOrDefault(timeslot), out var start))
+            {
+                timeslot.StartTime = start;
+            }
+
+            if (TimeSpan.TryParse(timeslotEndInputs.GetValueOrDefault(timeslot), out var end))
+            {
+                timeslot.EndTime = end;
+            }
+
+            if (TimeSpan.TryParse(timeslotRepeatUntilInputs.GetValueOrDefault(timeslot), out var repeatUntil))
+            {
+                timeslot.RepeatUntilLastStartTime = repeatUntil;
+            }
+            else
+            {
+                timeslot.RepeatUntilLastStartTime = null;
+            }
+        }
+    }
+
+    private static string DayName(int value) => ((DayOfWeek)value).ToString()[..3];
+
+    private static OfferingEditorDto NewEditor() => new()
+    {
+        Color = "#ec3e47",
+        IsActive = true,
+        AllowNewBookings = true
+    };
+}

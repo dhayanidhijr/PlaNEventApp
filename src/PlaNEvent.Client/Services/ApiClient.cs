@@ -112,6 +112,127 @@ public sealed class ApiClient(HttpClient httpClient, TokenAuthenticationStatePro
         return await httpClient.GetFromJsonAsync<List<OccurrenceDto>>($"api/public/sales/{ownerSlug}") ?? new List<OccurrenceDto>();
     }
 
+    public async Task<CalendarDashboardDto?> CalendarDashboardAsync(DateTime? startUtc = null, DateTime? endUtc = null)
+    {
+        await AttachTokenAsync();
+        var query = "api/calendar-management/dashboard";
+        if (startUtc.HasValue && endUtc.HasValue)
+        {
+            query += $"?startUtc={Uri.EscapeDataString(startUtc.Value.ToString("O"))}&endUtc={Uri.EscapeDataString(endUtc.Value.ToString("O"))}";
+        }
+
+        return await httpClient.GetFromJsonAsync<CalendarDashboardDto>(query);
+    }
+
+    public async Task<List<CategoryDto>> CategoriesAsync()
+    {
+        await AttachTokenAsync();
+        return await httpClient.GetFromJsonAsync<List<CategoryDto>>("api/calendar-management/categories") ?? new List<CategoryDto>();
+    }
+
+    public async Task<CategoryDto?> SaveCategoryAsync(SaveCategoryRequest request)
+    {
+        await AttachTokenAsync();
+        var response = await httpClient.PostAsJsonAsync("api/calendar-management/categories", request);
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<CategoryDto>() : null;
+    }
+
+    public async Task<bool> DeleteCategoryAsync(int id)
+    {
+        await AttachTokenAsync();
+        var response = await httpClient.DeleteAsync($"api/calendar-management/categories/{id}");
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<List<OfferingSummaryDto>> OfferingsSummaryAsync()
+    {
+        await AttachTokenAsync();
+        return await httpClient.GetFromJsonAsync<List<OfferingSummaryDto>>("api/calendar-management/offerings") ?? new List<OfferingSummaryDto>();
+    }
+
+    public async Task<OfferingEditorDto?> OfferingAsync(int id)
+    {
+        await AttachTokenAsync();
+        return await httpClient.GetFromJsonAsync<OfferingEditorDto>($"api/calendar-management/offerings/{id}");
+    }
+
+    public async Task<OfferingEditorDto?> SaveOfferingAsync(SaveOfferingRequest request)
+    {
+        await AttachTokenAsync();
+        var response = await httpClient.PostAsJsonAsync("api/calendar-management/offerings", request);
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<OfferingEditorDto>() : null;
+    }
+
+    public async Task<bool> DeleteOfferingAsync(int id)
+    {
+        await AttachTokenAsync();
+        var response = await httpClient.DeleteAsync($"api/calendar-management/offerings/{id}");
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<List<ShowcasePageSummaryDto>> ShowcasePagesAsync()
+    {
+        await AttachTokenAsync();
+        return await httpClient.GetFromJsonAsync<List<ShowcasePageSummaryDto>>("api/calendar-management/showcase-pages") ?? new List<ShowcasePageSummaryDto>();
+    }
+
+    public async Task<ShowcasePageEditorDto?> ShowcasePageAsync(int id)
+    {
+        await AttachTokenAsync();
+        return await httpClient.GetFromJsonAsync<ShowcasePageEditorDto>($"api/calendar-management/showcase-pages/{id}");
+    }
+
+    public async Task<ShowcasePageEditorDto?> SaveShowcasePageAsync(SaveShowcasePageRequest request)
+    {
+        await AttachTokenAsync();
+        var response = await httpClient.PostAsJsonAsync("api/calendar-management/showcase-pages", request);
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<ShowcasePageEditorDto>() : null;
+    }
+
+    public async Task<bool> DeleteShowcasePageAsync(int id)
+    {
+        await AttachTokenAsync();
+        var response = await httpClient.DeleteAsync($"api/calendar-management/showcase-pages/{id}");
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<PublicShowcaseDto?> PublicShowcaseAsync(string ownerSlug, string? pageSlug = null, string? sourceType = null, int? sourceId = null, int? offeringId = null, int? ruleGroupId = null, string? searchTerm = null)
+    {
+        var queryParts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(pageSlug))
+        {
+            queryParts.Add($"pageSlug={Uri.EscapeDataString(pageSlug)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(sourceType))
+        {
+            queryParts.Add($"sourceType={Uri.EscapeDataString(sourceType)}");
+        }
+
+        if (sourceId.HasValue)
+        {
+            queryParts.Add($"sourceId={sourceId.Value}");
+        }
+
+        if (offeringId.HasValue)
+        {
+            queryParts.Add($"offeringId={offeringId.Value}");
+        }
+
+        if (ruleGroupId.HasValue)
+        {
+            queryParts.Add($"ruleGroupId={ruleGroupId.Value}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            queryParts.Add($"searchTerm={Uri.EscapeDataString(searchTerm)}");
+        }
+
+        var query = queryParts.Count == 0 ? string.Empty : $"?{string.Join("&", queryParts)}";
+        return await httpClient.GetFromJsonAsync<PublicShowcaseDto>($"api/public/showcase/{ownerSlug}{query}");
+    }
+
     public async Task<List<BookingDto>> BookingsAsync()
     {
         await AttachTokenAsync();

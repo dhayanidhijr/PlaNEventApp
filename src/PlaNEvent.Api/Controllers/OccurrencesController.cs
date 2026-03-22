@@ -22,11 +22,13 @@ public sealed class OccurrencesController(AppDbContext dbContext, IActivityServi
             .Include(x => x.Slots)
             .Include(x => x.EventGroup)
             .Include(x => x.Staff)
+            .Include(x => x.Offering)
+            .Include(x => x.RuleGroup)
             .Where(x => x.OwnerId == CurrentUserId());
 
         if (startUtc.HasValue && endUtc.HasValue)
         {
-            query = query.Where(x => x.Slots.Any(s => s.StartUtc >= startUtc && s.EndUtc <= endUtc));
+            query = query.Where(x => x.Slots.Any(s => s.StartUtc <= endUtc && s.EndUtc >= startUtc));
         }
 
         var occurrences = await query.OrderBy(x => x.Id).ToListAsync();
@@ -48,7 +50,8 @@ public sealed class OccurrencesController(AppDbContext dbContext, IActivityServi
             Description = request.Description,
             EventGroupId = request.EventGroupId,
             StaffId = request.StaffId,
-            IsPublished = request.PublishOnCreate
+            IsPublished = request.PublishOnCreate,
+            Color = "#2f80ff"
         };
 
         foreach (var slot in ExpandSlots(request))
@@ -62,6 +65,8 @@ public sealed class OccurrencesController(AppDbContext dbContext, IActivityServi
 
         await dbContext.Entry(occurrence).Reference(x => x.EventGroup).LoadAsync(cancellationToken);
         await dbContext.Entry(occurrence).Reference(x => x.Staff).LoadAsync(cancellationToken);
+        await dbContext.Entry(occurrence).Reference(x => x.Offering).LoadAsync(cancellationToken);
+        await dbContext.Entry(occurrence).Reference(x => x.RuleGroup).LoadAsync(cancellationToken);
 
         return Ok(Map(occurrence));
     }
@@ -117,12 +122,17 @@ public sealed class OccurrencesController(AppDbContext dbContext, IActivityServi
         => new()
         {
             Id = occurrence.Id,
+            OfferingId = occurrence.OfferingId,
+            RuleGroupId = occurrence.RuleGroupId,
             Title = occurrence.Title,
             Description = occurrence.Description,
             EventGroupId = occurrence.EventGroupId,
             StaffId = occurrence.StaffId,
             EventGroupName = occurrence.EventGroup?.Name,
             StaffName = occurrence.Staff?.Name,
+            OfferingName = occurrence.Offering?.Name,
+            RuleGroupName = occurrence.RuleGroup?.Name,
+            Color = occurrence.Color,
             IsPublished = occurrence.IsPublished,
             Slots = occurrence.Slots.Select(x => new OccurrenceSlotDto
             {

@@ -63,6 +63,7 @@ builder.Services
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IActivityService, ActivityService>();
+builder.Services.AddScoped<IOfferingScheduleService, OfferingScheduleService>();
 
 builder.Services.AddCors(options =>
 {
