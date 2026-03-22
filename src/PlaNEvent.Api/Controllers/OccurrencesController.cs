@@ -47,13 +47,48 @@ public sealed class OccurrencesController(AppDbContext dbContext) : ControllerBa
             .Take(pageSize)
             .ToListAsync();
 
+        var occurrenceIds = occurrences.Select(x => x.Id).ToList();
+        var bookingCounts = occurrenceIds.Count == 0
+            ? new Dictionary<int, int>()
+            : await dbContext.Bookings
+                .AsNoTracking()
+                .Where(x => occurrenceIds.Contains(x.OccurrenceId))
+                .GroupBy(x => x.OccurrenceId)
+                .Select(x => new { OccurrenceId = x.Key, Count = x.Count() })
+                .ToDictionaryAsync(x => x.OccurrenceId, x => x.Count);
+
         return Ok(new OccurrencePageDto
         {
             Page = page,
             PageSize = pageSize,
             TotalCount = totalCount,
-            Items = occurrences.Select(Map).ToList()
+            Items = occurrences.Select(x => Map(x, bookingCounts.GetValueOrDefault(x.Id, 0))).ToList()
         });
+    }
+
+    [HttpGet("filter-options")]
+    public async Task<ActionResult<IReadOnlyCollection<OccurrenceFilterOptionDto>>> FilterOptions([FromQuery] DateTime? startUtc, [FromQuery] DateTime? endUtc)
+    {
+        if (!startUtc.HasValue || !endUtc.HasValue)
+        {
+            return BadRequest("A start and end date filter is required.");
+        }
+
+        var options = await dbContext.Occurrences
+            .AsNoTracking()
+            .Include(x => x.Slots)
+            .Include(x => x.Offering)
+            .Where(x => x.OwnerId == CurrentUserId())
+            .Where(x => x.Slots.Any(s => s.StartUtc <= endUtc && s.EndUtc >= startUtc))
+            .OrderBy(x => x.Title)
+            .Select(x => new OccurrenceFilterOptionDto
+            {
+                Id = x.Id,
+                Name = x.Offering != null ? x.Offering.Name : x.Title
+            })
+            .ToListAsync();
+
+        return Ok(options);
     }
 
     [HttpPost]
@@ -74,7 +109,7 @@ public sealed class OccurrencesController(AppDbContext dbContext) : ControllerBa
 
     private string CurrentUserId() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
 
-    private static OccurrenceDto Map(Occurrence occurrence)
+    private static OccurrenceDto Map(Occurrence occurrence, int totalBookingCount)
         => new()
         {
             Id = occurrence.Id,
@@ -90,6 +125,7 @@ public sealed class OccurrencesController(AppDbContext dbContext) : ControllerBa
             RuleGroupName = occurrence.RuleGroup?.Name,
             Color = occurrence.Color,
             IsPublished = occurrence.IsPublished,
+            TotalBookingCount = totalBookingCount,
             Slots = occurrence.Slots.Select(x => new OccurrenceSlotDto
             {
                 Id = x.Id,

@@ -1,6 +1,7 @@
 @page "/occurrences"
 @attribute [Authorize]
 @inject ApiClient ApiClient
+@inject NavigationManager NavigationManager
 
 <div class="module-header">
     <div>
@@ -62,7 +63,9 @@
                             <th>Rule Group</th>
                             <th>First Slot</th>
                             <th>Slot Count</th>
+                            <th>Total Bookings</th>
                             <th>Published</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -74,7 +77,11 @@
                             <td>@(occurrence.RuleGroupName ?? "-")</td>
                             <td>@(firstSlot is null ? "-" : $"{firstSlot.StartUtc.ToLocalTime():MMM dd yyyy hh:mm tt}")</td>
                             <td>@occurrence.Slots.Count</td>
+                            <td>@occurrence.TotalBookingCount</td>
                             <td>@(occurrence.IsPublished ? "Yes" : "No")</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenBookingDetails(occurrence.Id)">Details</button>
+                            </td>
                         </tr>
                     }
                     </tbody>
@@ -182,5 +189,17 @@
     {
         var offset = TimeZoneInfo.Local.GetUtcOffset(localDate);
         return new DateTimeOffset(localDate.Year, localDate.Month, localDate.Day, 23, 59, 59, offset).UtcDateTime;
+    }
+
+    private void OpenBookingDetails(int occurrenceId)
+    {
+        if (!HasRequiredFilter())
+        {
+            return;
+        }
+
+        var start = Uri.EscapeDataString(startDate!.Value.ToString("yyyy-MM-dd"));
+        var end = Uri.EscapeDataString(endDate!.Value.ToString("yyyy-MM-dd"));
+        NavigationManager.NavigateTo($"/bookings?startDate={start}&endDate={end}&occurrenceId={occurrenceId}");
     }
 }

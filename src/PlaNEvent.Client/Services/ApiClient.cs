@@ -24,6 +24,13 @@ public sealed class ApiClient(HttpClient httpClient, TokenAuthenticationStatePro
         return await httpClient.GetFromJsonAsync<OccurrencePageDto>(query);
     }
 
+    public async Task<List<OccurrenceFilterOptionDto>> OccurrenceFilterOptionsAsync(DateTime startUtc, DateTime endUtc)
+    {
+        await AttachTokenAsync();
+        var query = $"api/occurrences/filter-options?startUtc={Uri.EscapeDataString(startUtc.ToString("O"))}&endUtc={Uri.EscapeDataString(endUtc.ToString("O"))}";
+        return await httpClient.GetFromJsonAsync<List<OccurrenceFilterOptionDto>>(query) ?? new List<OccurrenceFilterOptionDto>();
+    }
+
     public async Task<List<EventGroupDto>> GroupsAsync()
     {
         await AttachTokenAsync();
@@ -207,16 +214,32 @@ public sealed class ApiClient(HttpClient httpClient, TokenAuthenticationStatePro
         return await httpClient.GetFromJsonAsync<PublicShowcaseDto>($"api/public/showcase/{ownerSlug}{query}");
     }
 
-    public async Task<List<BookingDto>> BookingsAsync()
+    public async Task<BookingPageDto?> BookingsAsync(DateTime? startUtc = null, DateTime? endUtc = null, int? occurrenceId = null, int page = 1, int pageSize = 20)
     {
         await AttachTokenAsync();
-        var response = await httpClient.GetAsync("api/bookings");
-        if (!response.IsSuccessStatusCode)
+        var queryParts = new List<string>();
+        if (startUtc.HasValue && endUtc.HasValue)
         {
-            return new List<BookingDto>();
+            queryParts.Add($"startUtc={Uri.EscapeDataString(startUtc.Value.ToString("O"))}");
+            queryParts.Add($"endUtc={Uri.EscapeDataString(endUtc.Value.ToString("O"))}");
         }
 
-        return await response.Content.ReadFromJsonAsync<List<BookingDto>>() ?? new List<BookingDto>();
+        if (occurrenceId.HasValue)
+        {
+            queryParts.Add($"occurrenceId={occurrenceId.Value}");
+        }
+
+        queryParts.Add($"page={page}");
+        queryParts.Add($"pageSize={pageSize}");
+
+        var url = $"api/bookings?{string.Join("&", queryParts)}";
+        var response = await httpClient.GetAsync(url);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        return await response.Content.ReadFromJsonAsync<BookingPageDto>();
     }
     public async Task<AgentChatResponse?> AgentChatAsync(AgentChatRequest request)
     {

@@ -19,33 +19,61 @@ public sealed class BookingsController(
     IActivityService activityService) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyCollection<BookingDto>>> List()
+    public async Task<ActionResult<BookingPageDto>> List([FromQuery] DateTime? startUtc, [FromQuery] DateTime? endUtc, [FromQuery] int? occurrenceId = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
+        if (!startUtc.HasValue || !endUtc.HasValue)
+        {
+            return BadRequest("A start and end date filter is required.");
+        }
+
+        page = Math.Max(1, page);
+        pageSize = pageSize switch
+        {
+            10 or 20 or 50 or 100 => pageSize,
+            _ => 20
+        };
+
         var userId = CurrentUserId();
 
-        var bookings = await dbContext.Bookings
+        var query = dbContext.Bookings
             .AsNoTracking()
             .Include(x => x.Occurrence)
+            .ThenInclude(x => x!.Offering)
             .Include(x => x.OccurrenceSlot)
-            .OrderByDescending(x => x.CreatedAtUtc)
-            .ToListAsync();
+            .Where(x => x.CustomerId == userId || x.Occurrence!.OwnerId == userId)
+            .Where(x => x.OccurrenceSlot != null && x.OccurrenceSlot.StartUtc <= endUtc && x.OccurrenceSlot.EndUtc >= startUtc);
 
-        var visibleBookings = bookings
-            .Where(x => x.CustomerId == userId || x.Occurrence?.OwnerId == userId)
-            .ToList();
+        if (occurrenceId.HasValue)
+        {
+            query = query.Where(x => x.OccurrenceId == occurrenceId.Value);
+        }
 
         var users = await userManager.Users.ToDictionaryAsync(x => x.Id, x => x.Email ?? string.Empty);
+        var totalCount = await query.CountAsync();
+        var visibleBookings = await query
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
 
-        return Ok(visibleBookings.Select(x => new BookingDto
+        return Ok(new BookingPageDto
         {
-            Id = x.Id,
-            OccurrenceId = x.OccurrenceId,
-            OccurrenceSlotId = x.OccurrenceSlotId,
-            CustomerId = x.CustomerId,
-            CustomerEmail = users.GetValueOrDefault(x.CustomerId, string.Empty),
-            CustomerNotes = x.CustomerNotes,
-            CreatedAtUtc = x.CreatedAtUtc
-        }).ToList());
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+            Items = visibleBookings.Select(x => new BookingDto
+            {
+                Id = x.Id,
+                OccurrenceId = x.OccurrenceId,
+                OccurrenceSlotId = x.OccurrenceSlotId,
+                CustomerId = x.CustomerId,
+                CustomerEmail = users.GetValueOrDefault(x.CustomerId, string.Empty),
+                CustomerNotes = x.CustomerNotes,
+                CreatedAtUtc = x.CreatedAtUtc,
+                OccurrenceName = x.Occurrence?.Offering?.Name ?? x.Occurrence?.Title ?? x.OccurrenceId.ToString(),
+                SlotStartUtc = x.OccurrenceSlot?.StartUtc
+            }).ToList()
+        });
     }
 
     [HttpPost]
@@ -87,7 +115,9 @@ public sealed class BookingsController(
             CustomerId = booking.CustomerId,
             CustomerEmail = customer?.Email ?? string.Empty,
             CustomerNotes = booking.CustomerNotes,
-            CreatedAtUtc = booking.CreatedAtUtc
+            CreatedAtUtc = booking.CreatedAtUtc,
+            OccurrenceName = occurrence.Offering?.Name ?? occurrence.Title,
+            SlotStartUtc = occurrence.Slots.FirstOrDefault(x => x.Id == booking.OccurrenceSlotId)?.StartUtc
         });
     }
 

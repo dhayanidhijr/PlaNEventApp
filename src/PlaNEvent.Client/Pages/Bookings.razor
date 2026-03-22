@@ -1,45 +1,250 @@
 @page "/bookings"
 @attribute [Authorize]
 @inject ApiClient ApiClient
+@inject NavigationManager NavigationManager
 
 <h1>Booking Management</h1>
 
-@if (bookings.Count == 0)
+@if (!string.IsNullOrWhiteSpace(status))
 {
-    <p>No bookings found.</p>
+    <div class="alert alert-info">@status</div>
 }
-else
-{
-    <table class="table table-striped">
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Occurrence</th>
-                <th>Customer</th>
-                <th>Notes</th>
-                <th>Created (UTC)</th>
-            </tr>
-        </thead>
-        <tbody>
-        @foreach (var booking in bookings)
+
+<div class="card">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h4 class="mb-0">Booking List</h4>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="ApplyFilters">Refresh</button>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <label>Start Date</label>
+                <InputDate class="form-control" @bind-Value="startDate" />
+            </div>
+            <div class="col-md-3">
+                <label>End Date</label>
+                <InputDate class="form-control" @bind-Value="endDate" />
+            </div>
+            <div class="col-md-3">
+                <label>Occurrence</label>
+                <select class="form-select" value="@selectedOccurrenceId" @onchange="OnOccurrenceChanged">
+                    <option value="">All occurrences</option>
+                    @foreach (var option in occurrenceOptions)
+                    {
+                        <option value="@option.Id">@option.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-1">
+                <label>Per Page</label>
+                <select class="form-select" value="@pageSize" @onchange="OnPageSizeChanged">
+                    @foreach (var option in PageSizeOptions)
+                    {
+                        <option value="@option">@option</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button class="btn btn-primary w-100" @onclick="ApplyFilters">Apply Filter</button>
+            </div>
+        </div>
+
+        @if (!HasRequiredFilter())
         {
-            <tr>
-                <td>@booking.Id</td>
-                <td>@booking.OccurrenceId</td>
-                <td>@booking.CustomerEmail</td>
-                <td>@booking.CustomerNotes</td>
-                <td>@booking.CreatedAtUtc</td>
-            </tr>
+            <p class="text-muted mb-0">Choose both a start date and end date to view bookings.</p>
         }
-        </tbody>
-    </table>
-}
+        else if (bookings.Count == 0)
+        {
+            <p class="text-muted mb-0">No bookings found in the selected filter range.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-striped align-middle">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Occurrence</th>
+                            <th>Slot Start</th>
+                            <th>Customer</th>
+                            <th>Notes</th>
+                            <th>Created (UTC)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var booking in bookings)
+                    {
+                        <tr>
+                            <td>@booking.Id</td>
+                            <td>@booking.OccurrenceName</td>
+                            <td>@(booking.SlotStartUtc.HasValue ? booking.SlotStartUtc.Value.ToLocalTime().ToString("MMM dd yyyy hh:mm tt") : "-")</td>
+                            <td>@booking.CustomerEmail</td>
+                            <td>@booking.CustomerNotes</td>
+                            <td>@booking.CreatedAtUtc.ToString("u")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+                <div class="text-muted">
+                    Showing @StartRecordNumber() - @EndRecordNumber() of @totalCount booking(s)
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="PreviousPage" disabled="@(currentPage <= 1)">Previous</button>
+                    <span>Page @currentPage of @TotalPages()</span>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="NextPage" disabled="@(currentPage >= TotalPages())">Next</button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
 
 @code {
+    private static readonly int[] PageSizeOptions = [10, 20, 50, 100];
     private List<BookingDto> bookings = new();
+    private List<OccurrenceFilterOptionDto> occurrenceOptions = new();
+    private string? status;
+    private DateTime? startDate = DateTime.Today.AddDays(-1);
+    private DateTime? endDate = DateTime.Today.AddDays(1);
+    private int? selectedOccurrenceId;
+    private int currentPage = 1;
+    private int pageSize = 20;
+    private int totalCount;
 
-    protected override async Task OnInitializedAsync()
+    [SupplyParameterFromQuery] public DateTime? startDateQuery { get; set; }
+    [SupplyParameterFromQuery] public DateTime? endDateQuery { get; set; }
+    [SupplyParameterFromQuery] public int? occurrenceId { get; set; }
+
+    protected override async Task OnParametersSetAsync()
     {
-        bookings = await ApiClient.BookingsAsync();
+        startDate = startDateQuery ?? DateTime.Today.AddDays(-1);
+        endDate = endDateQuery ?? DateTime.Today.AddDays(1);
+        selectedOccurrenceId = occurrenceId;
+        currentPage = 1;
+        await LoadOccurrenceOptionsAsync();
+        await LoadPageAsync();
+    }
+
+    private async Task ApplyFilters()
+    {
+        currentPage = 1;
+        await LoadOccurrenceOptionsAsync();
+        await LoadPageAsync();
+        SyncUrl();
+    }
+
+    private async Task PreviousPage()
+    {
+        if (currentPage <= 1)
+        {
+            return;
+        }
+
+        currentPage--;
+        await LoadPageAsync();
+    }
+
+    private async Task NextPage()
+    {
+        if (currentPage >= TotalPages())
+        {
+            return;
+        }
+
+        currentPage++;
+        await LoadPageAsync();
+    }
+
+    private async Task OnPageSizeChanged(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var value))
+        {
+            pageSize = value;
+            currentPage = 1;
+            await LoadPageAsync();
+        }
+    }
+
+    private async Task OnOccurrenceChanged(ChangeEventArgs args)
+    {
+        selectedOccurrenceId = int.TryParse(args.Value?.ToString(), out var value) ? value : null;
+        currentPage = 1;
+        await LoadPageAsync();
+        SyncUrl();
+    }
+
+    private async Task LoadOccurrenceOptionsAsync()
+    {
+        if (!HasRequiredFilter())
+        {
+            occurrenceOptions.Clear();
+            return;
+        }
+
+        occurrenceOptions = await ApiClient.OccurrenceFilterOptionsAsync(ToUtcStart(startDate!.Value), ToUtcEnd(endDate!.Value));
+        if (selectedOccurrenceId.HasValue && !occurrenceOptions.Any(x => x.Id == selectedOccurrenceId.Value))
+        {
+            selectedOccurrenceId = null;
+        }
+    }
+
+    private async Task LoadPageAsync()
+    {
+        if (!HasRequiredFilter())
+        {
+            status = "A date range is required to view bookings.";
+            bookings.Clear();
+            totalCount = 0;
+            return;
+        }
+
+        status = null;
+        var page = await ApiClient.BookingsAsync(ToUtcStart(startDate!.Value), ToUtcEnd(endDate!.Value), selectedOccurrenceId, currentPage, pageSize);
+        bookings = page?.Items.ToList() ?? new List<BookingDto>();
+        totalCount = page?.TotalCount ?? 0;
+    }
+
+    private bool HasRequiredFilter() => startDate.HasValue && endDate.HasValue;
+
+    private int TotalPages() => Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
+
+    private int StartRecordNumber() => totalCount == 0 ? 0 : ((currentPage - 1) * pageSize) + 1;
+
+    private int EndRecordNumber() => totalCount == 0 ? 0 : Math.Min(totalCount, currentPage * pageSize);
+
+    private void SyncUrl()
+    {
+        if (!HasRequiredFilter())
+        {
+            return;
+        }
+
+        var queryParts = new List<string>
+        {
+            $"startDate={Uri.EscapeDataString(startDate!.Value.ToString("yyyy-MM-dd"))}",
+            $"endDate={Uri.EscapeDataString(endDate!.Value.ToString("yyyy-MM-dd"))}"
+        };
+
+        if (selectedOccurrenceId.HasValue)
+        {
+            queryParts.Add($"occurrenceId={selectedOccurrenceId.Value}");
+        }
+
+        NavigationManager.NavigateTo($"/bookings?{string.Join("&", queryParts)}", false);
+    }
+
+    private static DateTime ToUtcStart(DateTime localDate)
+    {
+        var offset = TimeZoneInfo.Local.GetUtcOffset(localDate);
+        return new DateTimeOffset(localDate.Year, localDate.Month, localDate.Day, 0, 0, 0, offset).UtcDateTime;
+    }
+
+    private static DateTime ToUtcEnd(DateTime localDate)
+    {
+        var offset = TimeZoneInfo.Local.GetUtcOffset(localDate);
+        return new DateTimeOffset(localDate.Year, localDate.Month, localDate.Day, 23, 59, 59, offset).UtcDateTime;
     }
 }
