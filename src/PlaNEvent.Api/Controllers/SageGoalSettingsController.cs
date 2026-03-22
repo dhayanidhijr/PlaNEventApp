@@ -77,10 +77,16 @@ public sealed class SageGoalSettingsController(AppDbContext dbContext) : Control
                 continue;
             }
 
-            var feature = settings.Features.FirstOrDefault(x => x.Id == item.Id);
+            var feature = item.Id > 0
+                ? settings.Features.FirstOrDefault(x => x.Id == item.Id)
+                : null;
+
             if (feature is null)
             {
-                feature = new SageGoalFeature();
+                feature = new SageGoalFeature
+                {
+                    SageGoalSettings = settings
+                };
                 settings.Features.Add(feature);
             }
 
