@@ -247,8 +247,17 @@
         status = ok ? "Booking placed successfully." : "Booking failed. Sign in as a customer or standard user.";
     }
 
-    private Task ScrollRailAsync(string railId, int direction)
-        => JS.InvokeVoidAsync("showcaseUi.scrollRail", railId, direction).AsTask();
+    private async Task ScrollRailAsync(string railId, int direction)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("showcaseUi.scrollRail", railId, direction);
+        }
+        catch (JSException)
+        {
+            // If the helper script is stale or missing in the browser cache, keep the page usable.
+        }
+    }
 
     private static string CardBackgroundStyle(PublicShowcaseCardDto card)
         => $"background:linear-gradient(145deg, {card.AccentColor}, #0f172a);";
