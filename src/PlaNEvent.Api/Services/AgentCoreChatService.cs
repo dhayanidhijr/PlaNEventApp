@@ -747,6 +747,7 @@ public sealed class AgentCoreChatService(
         string? timeZoneId,
         CancellationToken cancellationToken)
     {
+        sessionId = NormalizeSessionId(null);
         var timeZone = ResolveTimeZone(timeZoneId);
         var nowLocal = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, timeZone);
         var requestedPeriod = ResolveReportPeriod(periodKey, nowLocal);
