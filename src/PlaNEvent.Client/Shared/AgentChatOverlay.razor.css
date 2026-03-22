@@ -83,11 +83,23 @@
 }
 
 .verification-overlay {
-    z-index: 1100;
+    z-index: 3600;
+    justify-content: flex-start;
+    align-items: flex-start;
+    background: rgba(8, 16, 32, 0.46);
 }
 
 .verification-panel {
-    max-width: 42rem;
+    width: min(34rem, calc(100vw - 304px));
+    max-width: none;
+    height: auto;
+    max-height: calc(100vh - 2rem);
+    margin-left: 280px;
+    margin-top: 1rem;
+    border: 1px solid #d5e0ef;
+    border-radius: 1rem;
+    box-shadow: 0 18px 44px rgba(11, 25, 46, 0.24);
+    overflow: hidden;
 }
 
 .verification-body {
@@ -129,6 +141,16 @@
     justify-content: flex-end;
     gap: 0.75rem;
     padding: 0 1.25rem 1.25rem;
+}
+
+@media (max-width: 960px) {
+    .verification-panel {
+        width: min(100vw, 34rem);
+        margin-left: 0;
+        margin-top: 0;
+        max-height: 100vh;
+        border-radius: 0;
+    }
 }
 
 @keyframes sagePulse {
