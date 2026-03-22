@@ -79,12 +79,13 @@
                         <div class="star-picker" role="radiogroup" aria-label="Training quality rating">
                             @for (var star = 1; star <= 5; star++)
                             {
-                                var active = model.TrainingQualityRating >= star;
+                                var currentStar = star;
+                                var active = model.TrainingQualityRating >= currentStar;
                                 <button type="button"
                                         class="star-btn @(active ? "active" : string.Empty)"
-                                        title="@($"{star} star{(star == 1 ? string.Empty : "s")}")"
-                                        aria-label="@($"{star} star{(star == 1 ? string.Empty : "s")}")"
-                                        @onclick="() => SetRating(star)">@StarSymbol</button>
+                                        title="@($"{currentStar} star{(currentStar == 1 ? string.Empty : "s")}")"
+                                        aria-label="@($"{currentStar} star{(currentStar == 1 ? string.Empty : "s")}")"
+                                        @onclick="() => SetRating(currentStar)">@StarSymbol</button>
                             }
                         </div>
                         <div class="panel-muted">Selected: @DisplayStars(model.TrainingQualityRating)</div>
@@ -109,11 +110,12 @@
                         <div class="mapping-list">
                             @for (var index = 0; index < model.OfferingMappings.Count; index++)
                             {
+                                var rowIndex = index;
                                 var mapping = model.OfferingMappings[index];
                                 <div class="mapping-row">
                                     <div>
                                         <label>Offering</label>
-                                        <select class="form-select" value="@mapping.OfferingId" @onchange="args => OnMappingOfferingChanged(index, args)">
+                                        <select class="form-select" value="@mapping.OfferingId" @onchange="args => OnMappingOfferingChanged(rowIndex, args)">
                                             <option value="0">Select offering</option>
                                             @foreach (var offering in offerings)
                                             {
@@ -123,7 +125,7 @@
                                     </div>
                                     <div>
                                         <label>Proficiency Level</label>
-                                        <select class="form-select" value="@mapping.ProficiencyLevel" @onchange="args => OnMappingProficiencyChanged(index, args)">
+                                        <select class="form-select" value="@mapping.ProficiencyLevel" @onchange="args => OnMappingProficiencyChanged(rowIndex, args)">
                                             @foreach (var option in ProficiencyOptions)
                                             {
                                                 <option value="@option">@option</option>
@@ -131,7 +133,7 @@
                                         </select>
                                     </div>
                                     <div class="mapping-remove-wrap">
-                                        <button type="button" class="btn btn-outline-danger" @onclick="() => RemoveMapping(index)">Remove</button>
+                                        <button type="button" class="btn btn-outline-danger" @onclick="() => RemoveMapping(rowIndex)">Remove</button>
                                     </div>
                                 </div>
                             }
