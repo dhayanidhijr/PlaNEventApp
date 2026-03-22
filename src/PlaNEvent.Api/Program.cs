@@ -119,6 +119,7 @@ using (var scope = app.Services.CreateScope())
     var services = scope.ServiceProvider;
     var db = services.GetRequiredService<AppDbContext>();
     await db.Database.EnsureCreatedAsync();
+    await SchemaBootstrapper.ApplyAsync(db);
 
     var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
     foreach (var role in Roles.All)
