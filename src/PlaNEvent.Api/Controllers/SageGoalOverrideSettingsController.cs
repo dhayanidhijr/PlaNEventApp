@@ -22,12 +22,17 @@ public sealed class SageGoalOverrideSettingsController(AppDbContext dbContext) :
             return Unauthorized();
         }
 
+        var baseSettings = await dbContext.SageGoalSettings
+            .AsNoTracking()
+            .Include(x => x.Features.OrderBy(f => f.SortOrder).ThenBy(f => f.Id))
+            .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
+
         var settings = await dbContext.SageGoalOverrideSettings
             .AsNoTracking()
             .Include(x => x.Features.OrderBy(f => f.SortOrder).ThenBy(f => f.Id))
             .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
 
-        return Ok(settings is null ? new SageGoalOverrideSettingsDto() : Map(settings));
+        return Ok(MapEditor(baseSettings, settings));
     }
 
     [HttpPut]
@@ -38,6 +43,11 @@ public sealed class SageGoalOverrideSettingsController(AppDbContext dbContext) :
         {
             return Unauthorized();
         }
+
+        var baseSettings = await dbContext.SageGoalSettings
+            .AsNoTracking()
+            .Include(x => x.Features.OrderBy(f => f.SortOrder).ThenBy(f => f.Id))
+            .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
 
         var settings = await dbContext.SageGoalOverrideSettings
             .Include(x => x.Features)
@@ -57,12 +67,19 @@ public sealed class SageGoalOverrideSettingsController(AppDbContext dbContext) :
         settings.OverrideExpectedMonthlySalesAmount = request.OverrideExpectedMonthlySalesAmount;
         settings.ExpectedMonthlySalesAmount = Math.Max(0, request.ExpectedMonthlySalesAmount);
 
-        var incomingById = request.Features
-            .Where(x => x.Id > 0)
-            .ToDictionary(x => x.Id, x => x);
+        var allowedFeatureNames = (baseSettings?.Features ?? new List<SageGoalFeature>())
+            .Where(x => !string.IsNullOrWhiteSpace(x.Name))
+            .Select(x => x.Name.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var incomingByName = request.Features
+            .Where(x => !string.IsNullOrWhiteSpace(x.Name))
+            .Where(x => allowedFeatureNames.Contains(x.Name.Trim()))
+            .GroupBy(x => x.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
 
         var toRemove = settings.Features
-            .Where(x => !incomingById.ContainsKey(x.Id))
+            .Where(x => !incomingByName.ContainsKey(x.Name))
             .ToList();
 
         foreach (var feature in toRemove)
@@ -70,17 +87,22 @@ public sealed class SageGoalOverrideSettingsController(AppDbContext dbContext) :
             dbContext.SageGoalOverrideFeatures.Remove(feature);
         }
 
-        for (var index = 0; index < request.Features.Count; index++)
+        var orderedBaseFeatures = (baseSettings?.Features ?? new List<SageGoalFeature>())
+            .Where(x => !string.IsNullOrWhiteSpace(x.Name))
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Id)
+            .ToList();
+
+        for (var index = 0; index < orderedBaseFeatures.Count; index++)
         {
-            var item = request.Features[index];
-            if (string.IsNullOrWhiteSpace(item.Name))
+            var baseFeature = orderedBaseFeatures[index];
+            if (!incomingByName.TryGetValue(baseFeature.Name.Trim(), out var item))
             {
                 continue;
             }
 
-            var feature = item.Id > 0
-                ? settings.Features.FirstOrDefault(x => x.Id == item.Id)
-                : null;
+            var feature = settings.Features.FirstOrDefault(x =>
+                string.Equals(x.Name, baseFeature.Name, StringComparison.OrdinalIgnoreCase));
 
             if (feature is null)
             {
@@ -106,32 +128,45 @@ public sealed class SageGoalOverrideSettingsController(AppDbContext dbContext) :
             .Include(x => x.Features.OrderBy(f => f.SortOrder).ThenBy(f => f.Id))
             .FirstAsync(x => x.OwnerId == ownerId, cancellationToken);
 
-        return Ok(Map(refreshed));
+        return Ok(MapEditor(baseSettings, refreshed));
     }
 
     private string CurrentUserId()
         => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub") ?? string.Empty;
 
-    private static SageGoalOverrideSettingsDto Map(SageGoalOverrideSettings settings) => new()
+    private static SageGoalOverrideSettingsDto MapEditor(SageGoalSettings? baseSettings, SageGoalOverrideSettings? overrideSettings)
     {
-        Id = settings.Id,
-        OverrideExpectedMonthlyBookingCount = settings.OverrideExpectedMonthlyBookingCount,
-        ExpectedMonthlyBookingCount = settings.ExpectedMonthlyBookingCount,
-        OverrideExpectedMonthlySalesAmount = settings.OverrideExpectedMonthlySalesAmount,
-        ExpectedMonthlySalesAmount = settings.ExpectedMonthlySalesAmount,
-        Features = settings.Features
-            .OrderBy(x => x.SortOrder)
-            .ThenBy(x => x.Id)
-            .Select(x => new SageGoalOverrideFeatureDto
+        var dto = new SageGoalOverrideSettingsDto
+        {
+            Id = overrideSettings?.Id ?? 0,
+            OverrideExpectedMonthlyBookingCount = overrideSettings?.OverrideExpectedMonthlyBookingCount ?? false,
+            ExpectedMonthlyBookingCount = overrideSettings?.ExpectedMonthlyBookingCount ?? baseSettings?.ExpectedMonthlyBookingCount ?? 0,
+            OverrideExpectedMonthlySalesAmount = overrideSettings?.OverrideExpectedMonthlySalesAmount ?? false,
+            ExpectedMonthlySalesAmount = overrideSettings?.ExpectedMonthlySalesAmount ?? baseSettings?.ExpectedMonthlySalesAmount ?? 0
+        };
+
+        var overrideByName = (overrideSettings?.Features ?? new List<SageGoalOverrideFeature>())
+            .Where(x => !string.IsNullOrWhiteSpace(x.Name))
+            .ToDictionary(x => x.Name.Trim(), x => x, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var baseFeature in (baseSettings?.Features ?? new List<SageGoalFeature>())
+                     .Where(x => !string.IsNullOrWhiteSpace(x.Name))
+                     .OrderBy(x => x.SortOrder)
+                     .ThenBy(x => x.Id))
+        {
+            overrideByName.TryGetValue(baseFeature.Name.Trim(), out var existingOverride);
+            dto.Features.Add(new SageGoalOverrideFeatureDto
             {
-                Id = x.Id,
-                Name = x.Name,
-                IsOverrideEnabled = x.IsOverrideEnabled,
-                ExpectedMonthlyBookingCount = x.ExpectedMonthlyBookingCount,
-                ExpectedMonthlySalesAmount = x.ExpectedMonthlySalesAmount,
-                TargetSharePercent = x.TargetSharePercent,
-                SortOrder = x.SortOrder
-            })
-            .ToList()
-    };
+                Id = existingOverride?.Id ?? 0,
+                Name = baseFeature.Name,
+                IsOverrideEnabled = existingOverride?.IsOverrideEnabled ?? false,
+                ExpectedMonthlyBookingCount = existingOverride?.ExpectedMonthlyBookingCount ?? baseFeature.ExpectedMonthlyBookingCount,
+                ExpectedMonthlySalesAmount = existingOverride?.ExpectedMonthlySalesAmount ?? baseFeature.ExpectedMonthlySalesAmount,
+                TargetSharePercent = existingOverride?.TargetSharePercent ?? baseFeature.TargetSharePercent,
+                SortOrder = baseFeature.SortOrder
+            });
+        }
+
+        return dto;
+    }
 }

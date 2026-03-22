@@ -51,17 +51,14 @@ else
 
     <div class="card">
         <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-                <div>
-                    <h4 class="mb-0">Feature Targets</h4>
-                    <p class="text-muted mb-0">Enable override on each row you want to apply.</p>
-                </div>
-                <button type="button" class="btn btn-outline-primary" @onclick="AddFeature">Add Feature</button>
+            <div class="mb-3">
+                <h4 class="mb-0">Feature Targets</h4>
+                <p class="text-muted mb-0">These rows mirror Sage Goal Settings. Enable override on the rows you want to persist separately here.</p>
             </div>
 
             @if (model.Features.Count == 0)
             {
-                <p class="text-muted mb-3">No feature overrides added yet.</p>
+                <p class="text-muted mb-3">No feature targets are available in Sage Goal Settings yet.</p>
             }
             else
             {
@@ -89,8 +86,7 @@ else
                                     <td>
                                         <input class="form-control"
                                                value="@feature.Name"
-                                               placeholder="Gym, Pool, Sauna, Aerobics..."
-                                               @oninput="args => UpdateFeatureName(rowIndex, args.Value?.ToString())" />
+                                               readonly />
                                     </td>
                                     <td>
                                         <input class="form-control"
@@ -115,9 +111,7 @@ else
                                                value="@feature.TargetSharePercent"
                                                @oninput="args => UpdateFeatureTargetShare(rowIndex, args.Value?.ToString())" />
                                     </td>
-                                    <td class="text-end">
-                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => RemoveFeature(rowIndex)">Remove</button>
-                                    </td>
+                                    <td></td>
                                 </tr>
                             }
                         </tbody>
@@ -143,31 +137,6 @@ else
     protected override async Task OnInitializedAsync()
     {
         model = await ApiClient.SageGoalOverrideSettingsAsync() ?? new SageGoalOverrideSettingsDto();
-    }
-
-    private void AddFeature()
-    {
-        model?.Features.Add(new SageGoalOverrideFeatureDto());
-    }
-
-    private void RemoveFeature(int index)
-    {
-        if (model is null || index < 0 || index >= model.Features.Count)
-        {
-            return;
-        }
-
-        model.Features.RemoveAt(index);
-    }
-
-    private void UpdateFeatureName(int index, string? value)
-    {
-        if (model is null || index < 0 || index >= model.Features.Count)
-        {
-            return;
-        }
-
-        model.Features[index].Name = value ?? string.Empty;
     }
 
     private void UpdateFeatureBookingCount(int index, string? value)
