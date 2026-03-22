@@ -1162,6 +1162,7 @@ public sealed class AgentCoreChatService(
             {
                 var matches = relevantBookings.Where(x => MatchesFeature(x.Occurrence?.Offering, feature.Name)).ToList();
                 return new FeaturePeriodMetrics(
+                    feature.SortOrder,
                     feature.Name,
                     feature.ExpectedMonthlyBookingCount,
                     feature.ExpectedMonthlySalesAmount,
@@ -1210,19 +1211,31 @@ public sealed class AgentCoreChatService(
             ? TargetSalesForPeriod(overrideSettings.ExpectedMonthlySalesAmount, metrics.Period)
             : metrics.SalesAmount;
 
+        var overrideFeaturesBySortOrder = overrideSettings.Features
+            .Where(x => x.IsOverrideEnabled && !string.IsNullOrWhiteSpace(x.Name))
+            .GroupBy(x => x.SortOrder)
+            .ToDictionary(x => x.Key, x => x.OrderBy(y => y.Id).First());
+
         var overrideFeaturesByName = overrideSettings.Features
             .Where(x => x.IsOverrideEnabled && !string.IsNullOrWhiteSpace(x.Name))
-            .ToDictionary(x => x.Name.Trim(), x => x, StringComparer.OrdinalIgnoreCase);
+            .GroupBy(x => NormalizeFeatureKey(x.Name))
+            .ToDictionary(x => x.Key, x => x.OrderBy(y => y.SortOrder).ThenBy(y => y.Id).First(), StringComparer.OrdinalIgnoreCase);
 
         var featureLines = metrics.Features
             .Select(feature =>
             {
-                if (!overrideFeaturesByName.TryGetValue(feature.Name, out var overrideFeature))
+                if (!overrideFeaturesBySortOrder.TryGetValue(feature.SortOrder, out var overrideFeature))
+                {
+                    overrideFeaturesByName.TryGetValue(NormalizeFeatureKey(feature.Name), out overrideFeature);
+                }
+
+                if (overrideFeature is null)
                 {
                     return feature;
                 }
 
                 return new FeaturePeriodMetrics(
+                    feature.SortOrder,
                     feature.Name,
                     feature.ExpectedMonthlyBookingCount,
                     feature.ExpectedMonthlySalesAmount,
@@ -1299,6 +1312,20 @@ public sealed class AgentCoreChatService(
 
         var daysInMonth = DateTime.DaysInMonth(day.Year, day.Month);
         return Math.Round(monthlyTarget / daysInMonth, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static string NormalizeFeatureKey(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return new string(value
+            .Trim()
+            .ToLowerInvariant()
+            .Where(char.IsLetterOrDigit)
+            .ToArray());
     }
 
     private static string BuildProgressReportPrompt(
@@ -1747,6 +1774,7 @@ public sealed class AgentCoreChatService(
     private sealed record ReportPeriod(string Label, string Key, DateTime StartDate, DateTime EndDate, bool IsPastPeriod);
 
     private sealed record FeaturePeriodMetrics(
+        int SortOrder,
         string Name,
         int ExpectedMonthlyBookingCount,
         decimal ExpectedMonthlySalesAmount,
