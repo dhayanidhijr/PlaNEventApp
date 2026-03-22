@@ -1,0 +1,12 @@
+.readonly-field[readonly] {
+    background: color-mix(in srgb, var(--app-surface, #1b2433) 88%, white 12%);
+    color: var(--app-text, #eef3ff);
+    border-color: color-mix(in srgb, var(--app-border, #31405a) 88%, white 12%);
+    opacity: 1;
+    cursor: default;
+}
+
+.readonly-field[readonly]:focus {
+    box-shadow: none;
+    border-color: color-mix(in srgb, var(--app-border, #31405a) 88%, white 12%);
+}

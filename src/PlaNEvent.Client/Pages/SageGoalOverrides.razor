@@ -32,18 +32,23 @@ else
                         <InputCheckbox @bind-Value="model.OverrideExpectedMonthlyBookingCount" />
                         <span>Expected Monthly Booking Count</span>
                     </label>
-                    <InputNumber class="form-control"
-                                 @bind-Value="model.ExpectedMonthlyBookingCount"
-                                 disabled="@(!model.OverrideExpectedMonthlyBookingCount)" />
+                    <input class="form-control readonly-field"
+                           type="number"
+                           value="@model.ExpectedMonthlyBookingCount"
+                           readonly="@(!model.OverrideExpectedMonthlyBookingCount)"
+                           @oninput="args => UpdateMonthlyBookingCount(args.Value?.ToString())" />
                 </div>
                 <div class="col-lg-6">
                     <label class="form-label d-flex align-items-center gap-2">
                         <InputCheckbox @bind-Value="model.OverrideExpectedMonthlySalesAmount" />
                         <span>Expected Monthly Sales Amount</span>
                     </label>
-                    <InputNumber class="form-control"
-                                 @bind-Value="model.ExpectedMonthlySalesAmount"
-                                 disabled="@(!model.OverrideExpectedMonthlySalesAmount)" />
+                    <input class="form-control readonly-field"
+                           type="number"
+                           step="0.01"
+                           value="@model.ExpectedMonthlySalesAmount"
+                           readonly="@(!model.OverrideExpectedMonthlySalesAmount)"
+                           @oninput="args => UpdateMonthlySalesAmount(args.Value?.ToString())" />
                 </div>
             </div>
         </div>
@@ -89,25 +94,25 @@ else
                                                readonly />
                                     </td>
                                     <td>
-                                        <input class="form-control"
+                                        <input class="form-control readonly-field"
                                                type="number"
-                                               disabled="@(!feature.IsOverrideEnabled)"
+                                               readonly="@(!feature.IsOverrideEnabled)"
                                                value="@feature.ExpectedMonthlyBookingCount"
                                                @oninput="args => UpdateFeatureBookingCount(rowIndex, args.Value?.ToString())" />
                                     </td>
                                     <td>
-                                        <input class="form-control"
+                                        <input class="form-control readonly-field"
                                                type="number"
                                                step="0.01"
-                                               disabled="@(!feature.IsOverrideEnabled)"
+                                               readonly="@(!feature.IsOverrideEnabled)"
                                                value="@feature.ExpectedMonthlySalesAmount"
                                                @oninput="args => UpdateFeatureSalesAmount(rowIndex, args.Value?.ToString())" />
                                     </td>
                                     <td>
-                                        <input class="form-control"
+                                        <input class="form-control readonly-field"
                                                type="number"
                                                step="0.01"
-                                               disabled="@(!feature.IsOverrideEnabled)"
+                                               readonly="@(!feature.IsOverrideEnabled)"
                                                value="@feature.TargetSharePercent"
                                                @oninput="args => UpdateFeatureTargetShare(rowIndex, args.Value?.ToString())" />
                                     </td>
@@ -137,6 +142,30 @@ else
     protected override async Task OnInitializedAsync()
     {
         model = await ApiClient.SageGoalOverrideSettingsAsync() ?? new SageGoalOverrideSettingsDto();
+    }
+
+    private void UpdateMonthlyBookingCount(string? value)
+    {
+        if (model is null)
+        {
+            return;
+        }
+
+        model.ExpectedMonthlyBookingCount = int.TryParse(value, out var parsed)
+            ? Math.Max(0, parsed)
+            : 0;
+    }
+
+    private void UpdateMonthlySalesAmount(string? value)
+    {
+        if (model is null)
+        {
+            return;
+        }
+
+        model.ExpectedMonthlySalesAmount = decimal.TryParse(value, out var parsed)
+            ? Math.Max(0, parsed)
+            : 0;
     }
 
     private void UpdateFeatureBookingCount(int index, string? value)
