@@ -162,6 +162,7 @@ public sealed class LookupsController(AppDbContext dbContext, IActivityService a
         var ownerId = CurrentUserId();
         var staff = await dbContext.StaffMembers
             .AsNoTracking()
+            .Include(x => x.OfferingMappings)
             .FirstOrDefaultAsync(x => x.OwnerId == ownerId && x.Id == id);
 
         if (staff is null)
@@ -171,12 +172,34 @@ public sealed class LookupsController(AppDbContext dbContext, IActivityService a
 
         var rangeStart = DateTime.SpecifyKind(startUtc.Value, DateTimeKind.Utc);
         var rangeEnd = DateTime.SpecifyKind(endUtc.Value, DateTimeKind.Utc);
+        var mappedOfferingIds = staff.OfferingMappings
+            .Select(x => x.OfferingId)
+            .Distinct()
+            .ToList();
+
+        if (mappedOfferingIds.Count == 0)
+        {
+            return Ok(new StaffCalendarDto
+            {
+                StaffId = staff.Id,
+                StaffName = staff.Name,
+                StartUtc = rangeStart,
+                EndUtc = rangeEnd,
+                Days = Enumerable.Range(0, (rangeEnd.Date - rangeStart.Date).Days + 1)
+                    .Select(offset => new StaffCalendarDayDto
+                    {
+                        DateUtc = rangeStart.Date.AddDays(offset),
+                        Entries = Array.Empty<StaffCalendarEntryDto>()
+                    })
+                    .ToList()
+            });
+        }
 
         var occurrences = await dbContext.Occurrences
             .AsNoTracking()
             .Include(x => x.Offering)
             .Include(x => x.Slots)
-            .Where(x => x.OwnerId == ownerId && x.StaffId == id)
+            .Where(x => x.OwnerId == ownerId && x.OfferingId.HasValue && mappedOfferingIds.Contains(x.OfferingId.Value))
             .Where(x => !offeringId.HasValue || x.OfferingId == offeringId.Value)
             .Where(x => x.Slots.Any(slot => slot.StartUtc <= rangeEnd && slot.EndUtc >= rangeStart))
             .OrderBy(x => x.Title)
@@ -185,7 +208,9 @@ public sealed class LookupsController(AppDbContext dbContext, IActivityService a
         var bookingCounts = await dbContext.Bookings
             .AsNoTracking()
             .Where(x => x.OccurrenceSlot != null && x.OccurrenceSlot.Occurrence != null)
-            .Where(x => x.OccurrenceSlot!.Occurrence!.OwnerId == ownerId && x.OccurrenceSlot.Occurrence.StaffId == id)
+            .Where(x => x.OccurrenceSlot!.Occurrence!.OwnerId == ownerId
+                        && x.OccurrenceSlot.Occurrence.OfferingId.HasValue
+                        && mappedOfferingIds.Contains(x.OccurrenceSlot.Occurrence.OfferingId.Value))
             .Where(x => !offeringId.HasValue || x.OccurrenceSlot!.Occurrence!.OfferingId == offeringId.Value)
             .Where(x => x.OccurrenceSlot!.StartUtc <= rangeEnd && x.OccurrenceSlot.EndUtc >= rangeStart)
             .GroupBy(x => x.OccurrenceSlotId)
