@@ -140,6 +140,7 @@ Keep the inline styling lightweight and chat-friendly.
 ";
     private string prompt = string.Empty;
     private bool isSending;
+    private bool isStartingDefaultReport;
     private DotNetObjectReference<AgentChatOverlay>? streamReference;
     private bool shouldAutoScroll;
     private AgentChatVerificationDto? activeVerification;
@@ -156,6 +157,12 @@ Keep the inline styling lightweight and chat-friendly.
         if (OverlayState.IsOpen)
         {
             await Js.InvokeVoidAsync("planeventAgentChat.initResize", "agent-chat-panel", "agent-chat-resize-handle");
+        }
+
+        if (OverlayState.IsOpen && messages.Count == 0 && !isSending && !isStartingDefaultReport)
+        {
+            isStartingDefaultReport = true;
+            _ = InvokeAsync(RunDefaultProgressReportAsync);
         }
 
         if (shouldAutoScroll)
@@ -221,6 +228,7 @@ Keep the inline styling lightweight and chat-friendly.
         {
             OverlayState.ClearConversation();
             activeVerification = null;
+            isStartingDefaultReport = false;
         }
     }
 
@@ -228,47 +236,7 @@ Keep the inline styling lightweight and chat-friendly.
     {
         if (action.RequiresExecution)
         {
-            if (isSending)
-            {
-                return;
-            }
-
-            OverlayState.AddMessage(new AgentChatOverlayState.ChatLine(true, action.Label, false));
-            OverlayState.BeginAgentMessage();
-            OverlayState.SetLastAgentThinking("Sage is completing that action...");
-            isSending = true;
-
-            try
-            {
-                var response = await Api.AgentChatActionAsync(new AgentChatActionRequest
-                {
-                    SessionId = OverlayState.SessionId,
-                    ActionType = action.ActionType,
-                    EntityType = action.EntityType,
-                    TemplateKey = action.TemplateKey,
-                    Label = action.Label,
-                    SourceMessage = action.Description,
-                    TimeZoneId = TimeZoneState.SelectedTimeZoneId
-                });
-
-                if (response is null)
-                {
-                    OverlayState.SetLastAgentMessage("Action failed.", false);
-                    return;
-                }
-
-                OverlayState.SessionId = response.SessionId;
-                OverlayState.SetLastAgentResponse(response);
-            }
-            catch (Exception ex)
-            {
-                OverlayState.SetLastAgentMessage($"Error: {ex.Message}", false);
-            }
-            finally
-            {
-                isSending = false;
-            }
-
+            await ExecuteActionAsync(action, action.Label, "Sage is completing that action...");
             return;
         }
 
@@ -334,6 +302,62 @@ Keep the inline styling lightweight and chat-friendly.
             Style = "outline-primary",
             RequiresExecution = true
         };
+
+    private async Task RunDefaultProgressReportAsync()
+    {
+        try
+        {
+            await ExecuteActionAsync(ProgressAction("Today", "today"), "Today Progress Report", "Sage is preparing today's progress report...");
+        }
+        finally
+        {
+            isStartingDefaultReport = false;
+        }
+    }
+
+    private async Task ExecuteActionAsync(AgentChatActionDto action, string userLabel, string thinkingText)
+    {
+        if (isSending)
+        {
+            return;
+        }
+
+        OverlayState.AddMessage(new AgentChatOverlayState.ChatLine(true, userLabel, false));
+        OverlayState.BeginAgentMessage();
+        OverlayState.SetLastAgentThinking(thinkingText);
+        isSending = true;
+
+        try
+        {
+            var response = await Api.AgentChatActionAsync(new AgentChatActionRequest
+            {
+                SessionId = OverlayState.SessionId,
+                ActionType = action.ActionType,
+                EntityType = action.EntityType,
+                TemplateKey = action.TemplateKey,
+                Label = action.Label,
+                SourceMessage = action.Description,
+                TimeZoneId = TimeZoneState.SelectedTimeZoneId
+            });
+
+            if (response is null)
+            {
+                OverlayState.SetLastAgentMessage("Action failed.", false);
+                return;
+            }
+
+            OverlayState.SessionId = response.SessionId;
+            OverlayState.SetLastAgentResponse(response);
+        }
+        catch (Exception ex)
+        {
+            OverlayState.SetLastAgentMessage($"Error: {ex.Message}", false);
+        }
+        finally
+        {
+            isSending = false;
+        }
+    }
 
     public void Dispose()
     {
