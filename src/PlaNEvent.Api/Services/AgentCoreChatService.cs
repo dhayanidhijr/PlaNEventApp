@@ -282,6 +282,11 @@ public sealed class AgentCoreChatService(
         return $"""
             <system>
             {facilityContext}
+            Sales only happen when offerings are surfaced through the public showcase experience.
+            Do not treat offering creation alone as the sales strategy.
+            Treat offerings as supply, and treat showcase pages plus public promotion as the primary sales lever.
+            When recommending how to improve sales, prioritize the showcase strategy first: what should be published, featured, highlighted, grouped, or promoted through showcase pages.
+            Only recommend creating a new offering when the current supply is clearly insufficient for the target.
             Use this context when you recommend or create showcase events so the plan helps meet or exceed the saved targets.
             When discussing facility strategy, tie your recommendations back to these goals explicitly.
             </system>
@@ -829,6 +834,12 @@ public sealed class AgentCoreChatService(
             return null;
         }
 
+        if (normalized.Contains("showcase", StringComparison.Ordinal)
+            && (normalized.Contains("today", StringComparison.Ordinal) || normalized.Contains("sales", StringComparison.Ordinal)))
+        {
+            return await CreateShowcasePageFromTemplateAsync(sessionId, ownerId, "featured-programs", cancellationToken);
+        }
+
         if (normalized.Contains("offering for today", StringComparison.Ordinal)
             || normalized.Contains("create offering today", StringComparison.Ordinal)
             || normalized.Contains("create offering for today", StringComparison.Ordinal))
@@ -1282,8 +1293,9 @@ public sealed class AgentCoreChatService(
         builder.AppendLine("4. an explicit section on what we should avoid doing");
         builder.AppendLine("5. a dedicated section titled 'Recommendations'");
         builder.AppendLine("Inside the recommendations, explicitly explain what is required to be done now to meet the goal, not just what could be done.");
-        builder.AppendLine("List the offerings, showcase items, schedule changes, or capacity changes that should be implemented now, in priority order.");
+        builder.AppendLine("List the showcase pages, featured rows, promoted offerings, schedule changes, or capacity changes that should be implemented now, in priority order.");
         builder.AppendLine("Name the recommended offerings clearly, for example private session, weekly workshop, weekend bootcamp, or other specific offering ideas based on the feature gaps.");
+        builder.AppendLine("For sales improvement, recommendations must be showcase-led: explain which showcase experience should be created or updated so customers actually see and book the inventory.");
         builder.AppendLine("6. after the recommendations, include a plain-language approval ask such as 'If you approve, reply yes and I will create X now.'");
         builder.AppendLine("Do not tell the user to click buttons. Buttons are optional support only.");
         builder.AppendLine("Feature performance should always be called out explicitly for the selected period when feature goal settings exist.");
@@ -1326,20 +1338,20 @@ public sealed class AgentCoreChatService(
   <div style="padding:1rem;border:1px solid var(--sage-border);border-radius:1rem;background:var(--sage-surface);">
     <h4 style="margin:0 0 0.5rem;">What We Should Do Next</h4>
     <ul style="margin:0;padding-left:1.1rem;">
-      <li>Push offerings and showcase rows tied to the highest-performing features and time slots.</li>
-      <li>Prioritize near-term demand generation for the current week and month where bookings are behind target.</li>
-      <li>Review slot capacity and publish status for underperforming offerings before adding new low-demand inventory.</li>
+      <li>Publish and feature the strongest offerings through showcase rows tied to the best-performing features and time slots.</li>
+      <li>Prioritize customer-facing showcase visibility for the current week and month where bookings are behind target.</li>
+      <li>Review whether current inventory is already sufficient before creating new offerings; if supply exists, the sales gap is likely a showcase and promotion problem first.</li>
     </ul>
   </div>
   <div style="padding:1rem;border:1px solid var(--sage-border);border-radius:1rem;background:var(--sage-surface);">
     <h4 style="margin:0 0 0.5rem;">Recommendations</h4>
     <p style="margin:0 0 0.5rem;color:var(--sage-muted);">What is required right now to move toward the goal:</p>
     <ul style="margin:0;padding-left:1.1rem;">
-      <li>Create a Private Session offering now to recover same-day bookings.</li>
-      <li>Add a Team Workshop offering to improve this week's booking volume.</li>
-      <li>Launch a Weekend Bootcamp to close the larger monthly gap faster.</li>
+      <li>Create or refresh a Featured Programs showcase so customers see the best current inventory immediately.</li>
+      <li>Launch a Weekend Specials showcase to turn monthly inventory into visible bookable demand.</li>
+      <li>Create new offerings only where the report shows actual inventory gaps after showcase coverage is addressed.</li>
     </ul>
-    <p style="margin:0.75rem 0 0;color:var(--sage-text);font-weight:600;">If you approve, reply in text with what you want me to create now, and I will perform it.</p>
+    <p style="margin:0.75rem 0 0;color:var(--sage-text);font-weight:600;">If you approve, reply in text with the showcase you want me to create now, and I will perform it.</p>
   </div>
   <div style="padding:1rem;border:1px solid var(--sage-border);border-radius:1rem;background:var(--sage-surface);">
     <h4 style="margin:0 0 0.5rem;">What We Should Avoid</h4>
@@ -1374,30 +1386,30 @@ public sealed class AgentCoreChatService(
         if (todayGap >= 1 && todayBehindRatio >= 0.5m)
         {
             actions.Add(CreateTemplateAction(
-                "offering",
-                "private-session",
-                $"Yes, Create Offering For Today ({todayGap} short)",
-                $"Create a ready-to-book private session offering now to help close today's remaining booking gap of {todayGap}.",
+                "showcase_page",
+                "featured-programs",
+                $"Yes, Create Sales Showcase For Today ({todayGap} short)",
+                $"Create a featured-programs showcase page now so the strongest available offerings are visible to customers and can start converting today's remaining booking gap of {todayGap}.",
                 "success"));
         }
 
         if (weekGap >= 3 && weekBehindRatio >= 0.35m)
         {
             actions.Add(CreateTemplateAction(
-                "offering",
-                "team-workshop",
-                $"Yes, Add Weekly Offering ({weekGap} short)",
-                $"Create a team workshop style offering to improve this week's booking pace and reduce the remaining gap of {weekGap}.",
+                "showcase_page",
+                "featured-programs",
+                $"Yes, Publish Weekly Sales Showcase ({weekGap} short)",
+                $"Create or refresh a featured-programs showcase page to drive attention to the best weekly inventory and reduce the remaining weekly gap of {weekGap}.",
                 "success"));
         }
 
         if (monthGap >= 8 && monthBehindRatio >= 0.25m)
         {
             actions.Add(CreateTemplateAction(
-                "offering",
-                "weekend-bootcamp",
-                $"Yes, Add Monthly Booster ({monthGap} short)",
-                $"Create a higher-impact weekend bootcamp offering to improve this month's booking pace and reduce the remaining gap of {monthGap}.",
+                "showcase_page",
+                "weekend-specials",
+                $"Yes, Launch Monthly Sales Showcase ({monthGap} short)",
+                $"Create a weekend-specials showcase page to promote high-conversion monthly inventory and reduce the remaining monthly gap of {monthGap}.",
                 "success"));
         }
 
@@ -1411,7 +1423,7 @@ public sealed class AgentCoreChatService(
                 "showcase_page",
                 "home-booking-page",
                 "Yes, Create Booking Showcase Page",
-                "Create a customer-facing booking page now so the new offerings can be promoted publicly right away.",
+                "Create a customer-facing booking page now so existing and future offerings can actually be sold publicly.",
                 "outline-primary"));
         }
 
