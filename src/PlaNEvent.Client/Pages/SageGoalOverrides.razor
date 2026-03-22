@@ -11,7 +11,7 @@
 
 @if (!string.IsNullOrWhiteSpace(status))
 {
-    <div class="alert @(saveSucceeded ? "alert-success" : "alert-info")">@status</div>
+    <div class="alert goal-override-alert @(saveSucceeded ? "alert-success" : "alert-info")">@status</div>
 }
 
 @if (model is null)
@@ -30,7 +30,7 @@ else
                 <div class="col-lg-6">
                     <label class="form-label d-flex align-items-center gap-2">
                         <InputCheckbox @bind-Value="model.OverrideExpectedMonthlyBookingCount" />
-                        <span>Expected Monthly Booking Count</span>
+                        <span>Achieved Monthly Booking Count</span>
                     </label>
                     <input class="form-control readonly-field"
                            type="number"
@@ -41,7 +41,7 @@ else
                 <div class="col-lg-6">
                     <label class="form-label d-flex align-items-center gap-2">
                         <InputCheckbox @bind-Value="model.OverrideExpectedMonthlySalesAmount" />
-                        <span>Expected Monthly Sales Amount</span>
+                        <span>Achieved Monthly Sales Amount</span>
                     </label>
                     <input class="form-control readonly-field"
                            type="number"
@@ -57,7 +57,7 @@ else
     <div class="card">
         <div class="card-body">
             <div class="mb-3">
-                <h4 class="mb-0">Feature Targets</h4>
+                <h4 class="mb-0">Feature Targets Achieved Override</h4>
                 <p class="text-muted mb-0">These rows mirror Sage Goal Settings. Enable override on the rows you want to persist separately here.</p>
             </div>
 
@@ -73,9 +73,9 @@ else
                             <tr>
                                 <th style="width: 7rem;">Override</th>
                                 <th>Feature</th>
-                                <th>Expected Bookings</th>
-                                <th>Expected Sales</th>
-                                <th>Target Share %</th>
+                                <th>Achieved Booking</th>
+                                <th>Achieved Sales</th>
+                                <th>Achieved Share %</th>
                                 <th></th>
                             </tr>
                         </thead>

@@ -10,3 +10,11 @@
     box-shadow: none;
     border-color: color-mix(in srgb, var(--app-border, #31405a) 88%, white 12%);
 }
+
+.goal-override-alert.alert-success {
+    color: #ffffff;
+}
+
+.goal-override-alert.alert-info {
+    color: #ffffff;
+}
