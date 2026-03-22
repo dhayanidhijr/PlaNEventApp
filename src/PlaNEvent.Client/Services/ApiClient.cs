@@ -236,7 +236,13 @@ public sealed class ApiClient(HttpClient httpClient, TokenAuthenticationStatePro
     public async Task<List<BookingDto>> BookingsAsync()
     {
         await AttachTokenAsync();
-        return await httpClient.GetFromJsonAsync<List<BookingDto>>("api/bookings") ?? new List<BookingDto>();
+        var response = await httpClient.GetAsync("api/bookings");
+        if (!response.IsSuccessStatusCode)
+        {
+            return new List<BookingDto>();
+        }
+
+        return await response.Content.ReadFromJsonAsync<List<BookingDto>>() ?? new List<BookingDto>();
     }
     public async Task<AgentChatResponse?> AgentChatAsync(AgentChatRequest request)
     {

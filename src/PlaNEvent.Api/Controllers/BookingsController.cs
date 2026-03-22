@@ -25,14 +25,18 @@ public sealed class BookingsController(
 
         var bookings = await dbContext.Bookings
             .AsNoTracking()
-            .Where(x => x.CustomerId == userId || x.Occurrence!.OwnerId == userId)
             .Include(x => x.Occurrence)
+            .Include(x => x.OccurrenceSlot)
             .OrderByDescending(x => x.CreatedAtUtc)
             .ToListAsync();
 
+        var visibleBookings = bookings
+            .Where(x => x.CustomerId == userId || x.Occurrence?.OwnerId == userId)
+            .ToList();
+
         var users = await userManager.Users.ToDictionaryAsync(x => x.Id, x => x.Email ?? string.Empty);
 
-        return Ok(bookings.Select(x => new BookingDto
+        return Ok(visibleBookings.Select(x => new BookingDto
         {
             Id = x.Id,
             OccurrenceId = x.OccurrenceId,
