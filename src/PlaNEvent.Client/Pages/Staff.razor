@@ -148,6 +148,30 @@
     </div>
 </div>
 
+@if (showSaveConfirmation)
+{
+    <div class="modal-backdrop">
+        <div class="confirm-dialog">
+            <div class="dialog-header">
+                <div>
+                    <h3 class="mb-0">Confirm Staff Save</h3>
+                    <div class="panel-muted">Review and confirm before saving this staff record.</div>
+                </div>
+            </div>
+            <div class="confirm-summary">
+                <div><strong>Name:</strong> @model.Name</div>
+                <div><strong>Email:</strong> @model.Email</div>
+                <div><strong>Rating:</strong> @DisplayStars(model.TrainingQualityRating)</div>
+                <div><strong>Assigned Offerings:</strong> @model.OfferingMappings.Count(x => x.OfferingId > 0)</div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-light" @onclick="CancelSaveConfirmation">Cancel</button>
+                <button class="btn btn-primary" @onclick="ConfirmSaveAsync" disabled="@isSaving">@(isSaving ? "Saving..." : "Confirm Save")</button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (showCalendarDialog)
 {
     <div class="modal-backdrop">
@@ -235,6 +259,8 @@
     private string? status;
 
     private bool showCalendarDialog;
+    private bool showSaveConfirmation;
+    private bool isSaving;
     private int? calendarStaffId;
     private string calendarStaffName = string.Empty;
     private DateTime? calendarStartDate = DateTime.Today;
@@ -324,12 +350,12 @@
         model.OfferingMappings[index].ProficiencyLevel = args.Value?.ToString() ?? "Intermediate";
     }
 
-    private async Task SaveAsync()
+    private Task SaveAsync()
     {
         if (string.IsNullOrWhiteSpace(model.Name) || string.IsNullOrWhiteSpace(model.Email))
         {
             status = "Name and email are required.";
-            return;
+            return Task.CompletedTask;
         }
 
         model.OfferingMappings = model.OfferingMappings
@@ -343,16 +369,32 @@
             })
             .ToList();
 
+        showSaveConfirmation = true;
+        return Task.CompletedTask;
+    }
+
+    private void CancelSaveConfirmation()
+    {
+        showSaveConfirmation = false;
+    }
+
+    private async Task ConfirmSaveAsync()
+    {
+        isSaving = true;
         var saved = await ApiClient.SaveStaffAsync(model);
+        isSaving = false;
+
         if (saved is null)
         {
             status = "Staff save failed.";
+            showSaveConfirmation = false;
             return;
         }
 
-        status = "Staff saved.";
-        selectedStaffId = saved.Id;
-        model = CloneStaff(saved);
+        status = $"Staff saved for {saved.Name}. A fresh entry form is ready for the next staff member.";
+        showSaveConfirmation = false;
+        selectedStaffId = null;
+        model = NewStaffModel();
         await ReloadAsync();
     }
 

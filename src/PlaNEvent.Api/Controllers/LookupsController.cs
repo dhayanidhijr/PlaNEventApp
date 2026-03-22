@@ -120,7 +120,12 @@ public sealed class LookupsController(AppDbContext dbContext, IActivityService a
         staff.Name = request.Name.Trim();
         staff.Email = request.Email.Trim();
         staff.TrainingQualityRating = Math.Clamp(decimal.Round(request.TrainingQualityRating, 0, MidpointRounding.AwayFromZero), 0m, 5m);
-        staff.OfferingMappings.Clear();
+
+        if (staff.OfferingMappings.Count > 0)
+        {
+            dbContext.StaffOfferingMappings.RemoveRange(staff.OfferingMappings);
+            staff.OfferingMappings.Clear();
+        }
 
         foreach (var mapping in request.OfferingMappings
                      .Where(x => x.OfferingId > 0)
