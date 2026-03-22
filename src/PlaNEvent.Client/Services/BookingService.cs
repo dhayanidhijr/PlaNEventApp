@@ -5,12 +5,12 @@ namespace PlaNEvent.Client.Services;
 
 public sealed class BookingService(HttpClient httpClient, TokenAuthenticationStateProvider authStateProvider)
 {
-    public async Task<bool> BookAsync(int occurrenceId, int slotId, string notes)
+    public async Task<BookingDto?> BookAsync(int occurrenceId, int slotId, string notes)
     {
         var token = await authStateProvider.GetTokenAsync();
         if (string.IsNullOrWhiteSpace(token))
         {
-            return false;
+            return null;
         }
 
         httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
@@ -21,6 +21,11 @@ public sealed class BookingService(HttpClient httpClient, TokenAuthenticationSta
             CustomerNotes = notes
         });
 
-        return response.IsSuccessStatusCode;
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        return await response.Content.ReadFromJsonAsync<BookingDto>();
     }
 }

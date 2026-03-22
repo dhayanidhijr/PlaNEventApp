@@ -15,6 +15,7 @@ public sealed class OccurrenceDto
     public string? EventGroupName { get; set; }
     public string? OfferingName { get; set; }
     public string? RuleGroupName { get; set; }
+    public string CoverImageUrl { get; set; } = string.Empty;
     public string Color { get; set; } = "#2f80ff";
     public int TotalBookingCount { get; set; }
     public IReadOnlyCollection<OccurrenceSlotDto> Slots { get; set; } = Array.Empty<OccurrenceSlotDto>();

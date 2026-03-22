@@ -53,9 +53,30 @@ public sealed class PublicShowcaseController(AppDbContext dbContext) : Controlle
             .AsNoTracking()
             .Include(x => x.Slots)
             .Include(x => x.RuleGroup)
+            .Include(x => x.Offering)
             .Where(x => x.OwnerId == owner.Id && x.IsPublished)
             .OrderBy(x => x.Title)
             .ToListAsync(cancellationToken);
+
+        var occurrenceIds = occurrences.Select(x => x.Id).ToList();
+        var bookingCountsByOccurrence = occurrenceIds.Count == 0
+            ? new Dictionary<int, int>()
+            : await dbContext.Bookings
+                .AsNoTracking()
+                .Where(x => occurrenceIds.Contains(x.OccurrenceId))
+                .GroupBy(x => x.OccurrenceId)
+                .Select(x => new { OccurrenceId = x.Key, Count = x.Count() })
+                .ToDictionaryAsync(x => x.OccurrenceId, x => x.Count, cancellationToken);
+
+        var slotIds = occurrences.SelectMany(x => x.Slots).Select(x => x.Id).ToList();
+        var bookingCountsBySlot = slotIds.Count == 0
+            ? new Dictionary<int, int>()
+            : await dbContext.Bookings
+                .AsNoTracking()
+                .Where(x => slotIds.Contains(x.OccurrenceSlotId))
+                .GroupBy(x => x.OccurrenceSlotId)
+                .Select(x => new { OccurrenceSlotId = x.Key, Count = x.Count() })
+                .ToDictionaryAsync(x => x.OccurrenceSlotId, x => x.Count, cancellationToken);
 
         var page = ResolvePage(pages, pageSlug);
         if (page is null)
@@ -109,7 +130,7 @@ public sealed class PublicShowcaseController(AppDbContext dbContext) : Controlle
                 Color = offering.Color,
                 Occurrences = occurrences
                     .Where(x => x.OfferingId == offering.Id && (!ruleGroupId.HasValue || x.RuleGroupId == ruleGroupId))
-                    .Select(MapOccurrence)
+                    .Select(x => MapOccurrence(x, bookingCountsByOccurrence, bookingCountsBySlot))
                     .ToList()
             };
 
@@ -264,21 +285,28 @@ public sealed class PublicShowcaseController(AppDbContext dbContext) : Controlle
         return category is null ? Array.Empty<string>() : BuildCategoryBreadcrumbs(categories, category);
     }
 
-    private static OccurrenceDto MapOccurrence(Occurrence occurrence) => new()
+    private static OccurrenceDto MapOccurrence(
+        Occurrence occurrence,
+        IReadOnlyDictionary<int, int> bookingCountsByOccurrence,
+        IReadOnlyDictionary<int, int> bookingCountsBySlot) => new()
     {
         Id = occurrence.Id,
         OfferingId = occurrence.OfferingId,
         RuleGroupId = occurrence.RuleGroupId,
         Title = occurrence.Title,
         Description = occurrence.Description,
+        OfferingName = occurrence.Offering?.Name,
         RuleGroupName = occurrence.RuleGroup?.Name,
+        CoverImageUrl = occurrence.Offering?.CoverImageUrl ?? string.Empty,
         Color = occurrence.Color,
         IsPublished = occurrence.IsPublished,
+        TotalBookingCount = bookingCountsByOccurrence.GetValueOrDefault(occurrence.Id, 0),
         Slots = occurrence.Slots.Select(x => new OccurrenceSlotDto
         {
             Id = x.Id,
             StartUtc = x.StartUtc,
-            EndUtc = x.EndUtc
+            EndUtc = x.EndUtc,
+            TotalBookingCount = bookingCountsBySlot.GetValueOrDefault(x.Id, 0)
         }).OrderBy(x => x.StartUtc).ToList()
     };
 }

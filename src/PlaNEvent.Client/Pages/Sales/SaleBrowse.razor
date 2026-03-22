@@ -49,8 +49,8 @@ else
 
     private async Task Book(int occurrenceId, int slotId)
     {
-        var ok = await BookingService.BookAsync(occurrenceId, slotId, "Booked from public URL.");
-        status = ok
+        var booked = await BookingService.BookAsync(occurrenceId, slotId, "Booked from public URL.");
+        status = booked is not null
             ? "Booking placed successfully."
             : "Booking failed. Ensure you are logged in as customer/standard user.";
     }

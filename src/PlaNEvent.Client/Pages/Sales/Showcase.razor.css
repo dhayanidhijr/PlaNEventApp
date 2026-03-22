@@ -416,10 +416,215 @@
     margin-top: 0.2rem;
 }
 
+.booking-slot small {
+    display: block;
+    margin-top: 0.3rem;
+    color: #8398b8;
+}
+
+.showcase-month-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.showcase-month-btn {
+    width: 42px;
+    height: 42px;
+    border: 1px solid #d3def0;
+    border-radius: 50%;
+    background: #fff;
+    color: #203763;
+    font-size: 1.2rem;
+}
+
+.showcase-month-label {
+    font-weight: 700;
+    color: #203662;
+    letter-spacing: 0.02em;
+}
+
 .showcase-month-shell {
     overflow: hidden;
     border-radius: 20px;
     border: 1px solid #dce6f3;
+}
+
+.week-head,
+.month-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.week-head {
+    background: #f4f7fc;
+    border-bottom: 1px solid #dce6f3;
+}
+
+.week-head div {
+    padding: 0.85rem 0.6rem;
+    text-align: center;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #6a82a5;
+}
+
+.day-cell {
+    min-height: 148px;
+    padding: 0.65rem;
+    border-right: 1px solid #ecf1f8;
+    border-bottom: 1px solid #ecf1f8;
+    background: rgba(255, 255, 255, 0.95);
+}
+
+.day-cell.muted {
+    background: #f8fbff;
+}
+
+.day-num {
+    margin-bottom: 0.45rem;
+    font-weight: 700;
+    color: #29416b;
+}
+
+.event-chip {
+    display: block;
+    width: 100%;
+    margin-bottom: 0.45rem;
+    padding: 0.55rem 0.65rem;
+    border-radius: 14px;
+    color: #fff;
+    box-shadow: 0 10px 24px rgba(12, 23, 43, 0.15);
+}
+
+.event-chip strong,
+.event-chip span {
+    display: block;
+}
+
+.event-chip strong {
+    font-size: 0.76rem;
+}
+
+.event-chip span {
+    margin-top: 0.08rem;
+    font-size: 0.84rem;
+    line-height: 1.2;
+}
+
+.event-chip-button {
+    border: 0;
+    text-align: left;
+}
+
+.event-chip-more {
+    background: #edf3ff;
+    color: #3c5789;
+    box-shadow: none;
+    font-size: 0.82rem;
+}
+
+.showcase-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: rgba(9, 18, 36, 0.58);
+    backdrop-filter: blur(6px);
+}
+
+.showcase-modal-card {
+    width: min(920px, calc(100vw - 2rem));
+    border-radius: 28px;
+    background: #fff;
+    color: #17233d;
+    box-shadow: 0 28px 80px rgba(7, 16, 31, 0.28);
+    padding: 1.4rem;
+    position: relative;
+}
+
+.showcase-modal-card-sm {
+    width: min(640px, calc(100vw - 2rem));
+}
+
+.showcase-modal-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    border: 1px solid #d8e1f0;
+    background: #fff;
+    color: #32486f;
+    border-radius: 999px;
+    padding: 0.45rem 0.85rem;
+    font-weight: 700;
+}
+
+.showcase-modal-layout {
+    display: grid;
+    grid-template-columns: minmax(250px, 0.9fr) minmax(0, 1.1fr);
+    gap: 1.2rem;
+}
+
+.showcase-modal-media {
+    min-height: 320px;
+    border-radius: 24px;
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+}
+
+.showcase-modal-copy h2 {
+    margin: 0.15rem 0 0.5rem;
+}
+
+.showcase-modal-kicker {
+    color: #5f79a2;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.showcase-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem;
+    margin-top: 1rem;
+}
+
+.showcase-detail-grid div {
+    border: 1px solid #e2e9f5;
+    border-radius: 18px;
+    padding: 0.95rem 1rem;
+    background: #f8fbff;
+}
+
+.showcase-detail-grid span {
+    display: block;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #6880a4;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.showcase-detail-grid strong {
+    display: block;
+    margin-top: 0.28rem;
+    color: #16233e;
+}
+
+.showcase-modal-actions {
+    display: flex;
+    justify-content: end;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1.25rem;
 }
 
 .showcase-loading,
@@ -439,7 +644,8 @@
     }
 
     .showcase-hero,
-    .booking-shell {
+    .booking-shell,
+    .showcase-modal-layout {
         grid-template-columns: 1fr;
     }
 
@@ -466,5 +672,13 @@
     .booking-slot {
         align-items: start;
         flex-direction: column;
+    }
+
+    .showcase-detail-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .day-cell {
+        min-height: 130px;
     }
 }

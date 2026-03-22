@@ -74,14 +74,48 @@
                             <p>@showcase.BookingCalendar.SelectedOccurrenceName</p>
                         </div>
                         <div class="booking-view-switch">
-                            @foreach (var option in new[] { "list", "month" })
+                            @foreach (var option in new[] { "month", "list" })
                             {
                                 <button class="@(calendarView == option ? "active" : string.Empty)" @onclick='() => calendarView = option'>@option</button>
                             }
                         </div>
                     </div>
 
-                    @if (calendarView == "list")
+                    @if (calendarView == "month")
+                    {
+                        <div class="showcase-month-nav">
+                            <button type="button" class="showcase-month-btn" @onclick="PreviousMonth">&#10094;</button>
+                            <div class="showcase-month-label">@monthCursor.ToString("MMMM yyyy")</div>
+                            <button type="button" class="showcase-month-btn" @onclick="NextMonth">&#10095;</button>
+                        </div>
+
+                        <div class="showcase-month-shell">
+                            <div class="week-head">
+                                <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+                            </div>
+                            <div class="month-grid">
+                                @foreach (var day in DaysInMonth())
+                                {
+                                    var entries = SlotEntriesForDay(day).ToList();
+                                    <div class="day-cell @(day.Month != monthCursor.Month ? "muted" : string.Empty)">
+                                        <div class="day-num">@day.Day</div>
+                                        @foreach (var entry in entries.Take(4))
+                                        {
+                                            <button type="button" class="event-chip event-chip-button" style="background:@entry.Occurrence.Color" @onclick="() => OpenBookingDialog(entry.Occurrence, entry.Slot)">
+                                                <strong>@entry.Slot.StartUtc.ToLocalTime().ToString("hh:mm tt")</strong>
+                                                <span>@entry.Occurrence.Title</span>
+                                            </button>
+                                        }
+                                        @if (entries.Count > 4)
+                                        {
+                                            <div class="event-chip event-chip-more">+@(entries.Count - 4) more</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else
                     {
                         <div class="booking-list">
                             @foreach (var occurrence in showcase.BookingCalendar.Occurrences)
@@ -102,33 +136,14 @@
                                                 <div>
                                                     <strong>@slot.StartUtc.ToLocalTime().ToString("MMM dd, yyyy")</strong>
                                                     <span>@slot.StartUtc.ToLocalTime().ToString("hh:mm tt") - @slot.EndUtc.ToLocalTime().ToString("hh:mm tt")</span>
+                                                    <small>@slot.TotalBookingCount booking(s) already taken</small>
                                                 </div>
-                                                <button class="btn btn-primary" @onclick="() => Book(occurrence.Id, slot.Id)">Book</button>
+                                                <button class="btn btn-primary" @onclick="() => OpenBookingDialog(occurrence, slot)">Book</button>
                                             </div>
                                         }
                                     </div>
                                 </article>
                             }
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="showcase-month-shell">
-                            <div class="week-head">
-                                <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
-                            </div>
-                            <div class="month-grid">
-                                @foreach (var day in DaysInMonth())
-                                {
-                                    <div class="day-cell">
-                                        <div class="day-num">@day.Day</div>
-                                        @foreach (var occurrence in showcase.BookingCalendar.Occurrences.Where(x => x.Slots.Any(s => s.StartUtc.Date == day.Date)).Take(3))
-                                        {
-                                            <div class="event-chip" style="background:@occurrence.Color">@occurrence.Title</div>
-                                        }
-                                    </div>
-                                }
-                            </div>
                         </div>
                     }
                 </section>
@@ -189,6 +204,80 @@
     }
 </div>
 
+@if (pendingBooking is not null)
+{
+    <div class="showcase-modal-backdrop" @onclick="CloseBookingDialog">
+        <div class="showcase-modal-card" @onclick:stopPropagation="true">
+            <button type="button" class="showcase-modal-close" @onclick="CloseBookingDialog">Close</button>
+            <div class="showcase-modal-layout">
+                <div class="showcase-modal-media" style="@BookingImageStyle(pendingBooking.Occurrence)"></div>
+                <div class="showcase-modal-copy">
+                    <div class="showcase-modal-kicker">Ready to book</div>
+                    <h2>@pendingBooking.Occurrence.Title</h2>
+                    <p>@pendingBooking.Occurrence.Description</p>
+                    <div class="showcase-detail-grid">
+                        <div>
+                            <span>Date</span>
+                            <strong>@pendingBooking.Slot.StartUtc.ToLocalTime().ToString("MMM dd, yyyy")</strong>
+                        </div>
+                        <div>
+                            <span>Time</span>
+                            <strong>@pendingBooking.Slot.StartUtc.ToLocalTime().ToString("hh:mm tt") - @pendingBooking.Slot.EndUtc.ToLocalTime().ToString("hh:mm tt")</strong>
+                        </div>
+                        <div>
+                            <span>Schedule</span>
+                            <strong>@(pendingBooking.Occurrence.RuleGroupName ?? "General availability")</strong>
+                        </div>
+                        <div>
+                            <span>Seats Already Taken</span>
+                            <strong>@pendingBooking.Slot.TotalBookingCount</strong>
+                        </div>
+                    </div>
+                    <div class="showcase-modal-actions">
+                        <button type="button" class="btn btn-outline-secondary" @onclick="CloseBookingDialog">Cancel</button>
+                        <button type="button" class="btn btn-primary" @onclick="ConfirmBookingAsync">Book</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (confirmedBooking is not null)
+{
+    <div class="showcase-modal-backdrop" @onclick="DismissConfirmation">
+        <div class="showcase-modal-card showcase-modal-card-sm" @onclick:stopPropagation="true">
+            <button type="button" class="showcase-modal-close" @onclick="DismissConfirmation">Close</button>
+            <div class="showcase-modal-kicker">Booking confirmed</div>
+            <h2>@confirmedBooking.Title</h2>
+            <p>@confirmedBooking.Message</p>
+            <div class="showcase-detail-grid">
+                <div>
+                    <span>Date</span>
+                    <strong>@confirmedBooking.StartLocal.ToString("MMM dd, yyyy")</strong>
+                </div>
+                <div>
+                    <span>Time</span>
+                    <strong>@confirmedBooking.StartLocal.ToString("hh:mm tt") - @confirmedBooking.EndLocal.ToString("hh:mm tt")</strong>
+                </div>
+                <div>
+                    <span>Schedule</span>
+                    <strong>@confirmedBooking.RuleGroupName</strong>
+                </div>
+                <div>
+                    <span>Seats Taken</span>
+                    <strong>@confirmedBooking.TotalBookingCount</strong>
+                </div>
+            </div>
+            <div class="showcase-modal-actions">
+                <button type="button" class="btn btn-outline-secondary" @onclick="PrintConfirmationAsync">Print</button>
+                <button type="button" class="btn btn-outline-primary" @onclick="AddToCalendarAsync">Add To Calendar</button>
+                <button type="button" class="btn btn-primary" @onclick="DismissConfirmation">Dismiss</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public string OwnerSlug { get; set; } = string.Empty;
     [SupplyParameterFromQuery] public string? pageSlug { get; set; }
@@ -200,11 +289,33 @@
 
     private PublicShowcaseDto? showcase;
     private string? status;
-    private string calendarView = "list";
+    private string calendarView = "month";
+    private DateTime monthCursor = DateTime.Today;
+    private ShowcaseBookingSelection? pendingBooking;
+    private ShowcaseBookingConfirmation? confirmedBooking;
 
     protected override async Task OnParametersSetAsync()
     {
+        await LoadShowcaseAsync();
+    }
+
+    private async Task LoadShowcaseAsync()
+    {
         showcase = await ApiClient.PublicShowcaseAsync(OwnerSlug, pageSlug, sourceType, sourceId, offeringId, ruleGroupId, searchTerm);
+
+        if (showcase?.BookingCalendar?.Occurrences.Count > 0)
+        {
+            var firstSlot = showcase.BookingCalendar.Occurrences
+                .SelectMany(x => x.Slots)
+                .OrderBy(x => x.StartUtc)
+                .FirstOrDefault();
+
+            if (firstSlot is not null)
+            {
+                var localStart = firstSlot.StartUtc.ToLocalTime();
+                monthCursor = new DateTime(localStart.Year, localStart.Month, 1);
+            }
+        }
     }
 
     private void OpenPage(string slug)
@@ -241,11 +352,77 @@
         NavigationManager.NavigateTo($"/showcase/{OwnerSlug}?{query}");
     }
 
-    private async Task Book(int occurrenceId, int slotId)
+    private void OpenBookingDialog(OccurrenceDto occurrence, OccurrenceSlotDto slot)
     {
-        var ok = await BookingService.BookAsync(occurrenceId, slotId, "Booked from showcase");
-        status = ok ? "Booking placed successfully." : "Booking failed. Sign in as a customer or standard user.";
+        pendingBooking = new ShowcaseBookingSelection(occurrence, slot);
+        status = null;
     }
+
+    private void CloseBookingDialog() => pendingBooking = null;
+
+    private async Task ConfirmBookingAsync()
+    {
+        if (pendingBooking is null)
+        {
+            return;
+        }
+
+        var selection = pendingBooking;
+        var booked = await BookingService.BookAsync(selection.Occurrence.Id, selection.Slot.Id, "Booked from showcase");
+        if (booked is null)
+        {
+            status = "Booking failed. Sign in as a customer or standard user.";
+            return;
+        }
+
+        confirmedBooking = new ShowcaseBookingConfirmation
+        {
+            Title = selection.Occurrence.Title,
+            RuleGroupName = selection.Occurrence.RuleGroupName ?? "General availability",
+            ImageUrl = selection.Occurrence.CoverImageUrl,
+            StartLocal = selection.Slot.StartUtc.ToLocalTime(),
+            EndLocal = selection.Slot.EndUtc.ToLocalTime(),
+            TotalBookingCount = selection.Slot.TotalBookingCount + 1,
+            Message = "Your event is booked. You can add it to your calendar, print the confirmation, or dismiss this message."
+        };
+
+        pendingBooking = null;
+        status = "Booking placed successfully.";
+        await LoadShowcaseAsync();
+    }
+
+    private async Task AddToCalendarAsync()
+    {
+        if (confirmedBooking is null)
+        {
+            return;
+        }
+
+        var content = BuildCalendarFile(confirmedBooking);
+        var fileName = $"{SanitizeFileName(confirmedBooking.Title)}-{confirmedBooking.StartLocal:yyyyMMddHHmm}.ics";
+        await JS.InvokeVoidAsync("showcaseUi.downloadCalendarFile", fileName, content);
+    }
+
+    private async Task PrintConfirmationAsync()
+    {
+        if (confirmedBooking is null)
+        {
+            return;
+        }
+
+        var body = string.Join(string.Empty, new[]
+        {
+            $"<div class=\"meta\"><strong>Event:</strong> {confirmedBooking.Title}</div>",
+            $"<div class=\"meta\"><strong>Date:</strong> {confirmedBooking.StartLocal:MMM dd, yyyy}</div>",
+            $"<div class=\"meta\"><strong>Time:</strong> {confirmedBooking.StartLocal:hh:mm tt} - {confirmedBooking.EndLocal:hh:mm tt}</div>",
+            $"<div class=\"meta\"><strong>Schedule:</strong> {confirmedBooking.RuleGroupName}</div>",
+            $"<div class=\"meta\"><strong>Seats Taken:</strong> {confirmedBooking.TotalBookingCount}</div>"
+        });
+
+        await JS.InvokeVoidAsync("showcaseUi.printBookingConfirmation", confirmedBooking.Title, body);
+    }
+
+    private void DismissConfirmation() => confirmedBooking = null;
 
     private async Task ScrollRailAsync(string railId, int direction)
     {
@@ -257,6 +434,34 @@
         {
             // If the helper script is stale or missing in the browser cache, keep the page usable.
         }
+    }
+
+    private void PreviousMonth() => monthCursor = monthCursor.AddMonths(-1);
+
+    private void NextMonth() => monthCursor = monthCursor.AddMonths(1);
+
+    private IEnumerable<ShowcaseSlotEntry> SlotEntriesForDay(DateTime day)
+    {
+        if (showcase?.BookingCalendar is null)
+        {
+            return Enumerable.Empty<ShowcaseSlotEntry>();
+        }
+
+        var localDay = day.Date;
+        return showcase.BookingCalendar.Occurrences
+            .SelectMany(occurrence => occurrence.Slots.Select(slot => new ShowcaseSlotEntry(occurrence, slot)))
+            .Where(entry => entry.Slot.StartUtc.ToLocalTime().Date == localDay)
+            .OrderBy(entry => entry.Slot.StartUtc);
+    }
+
+    private string BookingImageStyle(OccurrenceDto occurrence)
+    {
+        if (!string.IsNullOrWhiteSpace(occurrence.CoverImageUrl))
+        {
+            return $"background-image:linear-gradient(180deg, rgba(11,18,34,0.05), rgba(11,18,34,0.4)), url('{occurrence.CoverImageUrl}');";
+        }
+
+        return $"background:linear-gradient(145deg, {occurrence.Color}, #0f172a);";
     }
 
     private static string CardBackgroundStyle(PublicShowcaseCardDto card)
@@ -279,9 +484,54 @@
 
     private IEnumerable<DateTime> DaysInMonth()
     {
-        var pivot = DateTime.UtcNow.Date;
-        var first = new DateTime(pivot.Year, pivot.Month, 1);
+        var first = new DateTime(monthCursor.Year, monthCursor.Month, 1);
         var start = first.AddDays(-(int)first.DayOfWeek);
         return Enumerable.Range(0, 42).Select(i => start.AddDays(i));
+    }
+
+    private static string BuildCalendarFile(ShowcaseBookingConfirmation booking)
+    {
+        var startUtc = booking.StartLocal.ToUniversalTime();
+        var endUtc = booking.EndLocal.ToUniversalTime();
+
+        return string.Join("\r\n",
+        [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//PlaNEvent//Booking//EN",
+            "BEGIN:VEVENT",
+            $"UID:{Guid.NewGuid()}",
+            $"DTSTAMP:{DateTime.UtcNow:yyyyMMdd'T'HHmmss'Z'}",
+            $"DTSTART:{startUtc:yyyyMMdd'T'HHmmss'Z'}",
+            $"DTEND:{endUtc:yyyyMMdd'T'HHmmss'Z'}",
+            $"SUMMARY:{EscapeCalendarText(booking.Title)}",
+            $"DESCRIPTION:{EscapeCalendarText($"Booked via PlaNEvent. Schedule: {booking.RuleGroupName}")}",
+            "END:VEVENT",
+            "END:VCALENDAR"
+        ]);
+    }
+
+    private static string EscapeCalendarText(string value)
+        => value.Replace("\\", "\\\\").Replace(";", "\\;").Replace(",", "\\,").Replace("\r", string.Empty).Replace("\n", "\\n");
+
+    private static string SanitizeFileName(string value)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        return new string(value.Select(ch => invalid.Contains(ch) ? '-' : ch).ToArray());
+    }
+
+    private sealed record ShowcaseSlotEntry(OccurrenceDto Occurrence, OccurrenceSlotDto Slot);
+
+    private sealed record ShowcaseBookingSelection(OccurrenceDto Occurrence, OccurrenceSlotDto Slot);
+
+    private sealed class ShowcaseBookingConfirmation
+    {
+        public string Title { get; set; } = string.Empty;
+        public string RuleGroupName { get; set; } = string.Empty;
+        public string ImageUrl { get; set; } = string.Empty;
+        public DateTime StartLocal { get; set; }
+        public DateTime EndLocal { get; set; }
+        public int TotalBookingCount { get; set; }
+        public string Message { get; set; } = string.Empty;
     }
 }
