@@ -34,6 +34,7 @@ public sealed class AgentCoreChatService(
     public async Task<AgentChatResponse> ChatAsync(AgentChatRequest request, CancellationToken cancellationToken)
     {
         var sessionId = NormalizeSessionId(request.SessionId);
+        var ownerId = CurrentUserId();
 
         if (string.IsNullOrWhiteSpace(request.Message))
         {
@@ -43,6 +44,15 @@ public sealed class AgentCoreChatService(
                 Reply = "Please provide a message.",
                 HtmlReply = "<p>Please provide a message.</p>"
             };
+        }
+
+        if (!string.IsNullOrWhiteSpace(ownerId))
+        {
+            var directActionResponse = await TryHandleDirectRecommendationCommandAsync(sessionId, ownerId, request.Message, cancellationToken);
+            if (directActionResponse is not null)
+            {
+                return directActionResponse;
+            }
         }
 
         if (string.IsNullOrWhiteSpace(optionsValue.AgentRuntimeArn))
@@ -72,6 +82,7 @@ public sealed class AgentCoreChatService(
     public async Task StreamChatAsync(AgentChatRequest request, HttpResponse response, CancellationToken cancellationToken)
     {
         var sessionId = NormalizeSessionId(request.SessionId);
+        var ownerId = CurrentUserId();
 
         response.StatusCode = StatusCodes.Status200OK;
         response.ContentType = "text/event-stream";
@@ -86,6 +97,17 @@ public sealed class AgentCoreChatService(
                 message = "Please provide a message."
             }, cancellationToken);
             return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(ownerId))
+        {
+            var directActionResponse = await TryHandleDirectRecommendationCommandAsync(sessionId, ownerId, request.Message, cancellationToken);
+            if (directActionResponse is not null)
+            {
+                await WriteSseEventAsync(response, "session", new { sessionId = directActionResponse.SessionId }, cancellationToken);
+                await WriteSseEventAsync(response, "complete", directActionResponse, cancellationToken);
+                return;
+            }
         }
 
         if (string.IsNullOrWhiteSpace(optionsValue.AgentRuntimeArn))
@@ -774,15 +796,68 @@ public sealed class AgentCoreChatService(
             htmlReply = BuildFallbackProgressHtml(requestedMetrics, comparisonMetrics, currentDayMetrics, currentWeekMetrics, currentMonthMetrics, nowLocal);
         }
 
-        var finalHtml = PrependProgressActionGuidanceHtml(htmlReply, actions);
-
         return new AgentChatResponse
         {
             SessionId = sessionId,
-            Reply = StripHtml(finalHtml),
-            HtmlReply = finalHtml,
+            Reply = StripHtml(htmlReply),
+            HtmlReply = htmlReply,
             Actions = actions
         };
+    }
+
+    private async Task<AgentChatResponse?> TryHandleDirectRecommendationCommandAsync(
+        string sessionId,
+        string ownerId,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        var normalized = ExtractUserMessage(message).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
+        var isConfirmation = normalized.Contains("yes", StringComparison.Ordinal)
+            || normalized.Contains("please", StringComparison.Ordinal)
+            || normalized.Contains("go ahead", StringComparison.Ordinal)
+            || normalized.Contains("do it", StringComparison.Ordinal)
+            || normalized.Contains("create", StringComparison.Ordinal)
+            || normalized.Contains("add", StringComparison.Ordinal);
+
+        if (!isConfirmation)
+        {
+            return null;
+        }
+
+        if (normalized.Contains("offering for today", StringComparison.Ordinal)
+            || normalized.Contains("create offering today", StringComparison.Ordinal)
+            || normalized.Contains("create offering for today", StringComparison.Ordinal))
+        {
+            return await CreateOfferingFromTemplateAsync(sessionId, ownerId, "private-session", cancellationToken);
+        }
+
+        if (normalized.Contains("weekly offering", StringComparison.Ordinal)
+            || normalized.Contains("add weekly offering", StringComparison.Ordinal)
+            || normalized.Contains("weekly plan", StringComparison.Ordinal))
+        {
+            return await CreateOfferingFromTemplateAsync(sessionId, ownerId, "team-workshop", cancellationToken);
+        }
+
+        if (normalized.Contains("monthly booster", StringComparison.Ordinal)
+            || normalized.Contains("add monthly booster", StringComparison.Ordinal)
+            || normalized.Contains("weekend booster", StringComparison.Ordinal))
+        {
+            return await CreateOfferingFromTemplateAsync(sessionId, ownerId, "weekend-bootcamp", cancellationToken);
+        }
+
+        if (normalized.Contains("booking showcase page", StringComparison.Ordinal)
+            || normalized.Contains("create showcase page", StringComparison.Ordinal)
+            || normalized.Contains("create booking page", StringComparison.Ordinal))
+        {
+            return await CreateShowcasePageFromTemplateAsync(sessionId, ownerId, "home-booking-page", cancellationToken);
+        }
+
+        return null;
     }
 
     private async Task<AgentChatResponse> CreateOfferingFromTemplateAsync(
@@ -1205,6 +1280,16 @@ public sealed class AgentCoreChatService(
         builder.AppendLine("2. a compact metric card or grid");
         builder.AppendLine("3. explicit recommendations on what we should do next");
         builder.AppendLine("4. an explicit section on what we should avoid doing");
+        builder.AppendLine("5. a dedicated section titled 'Recommendations'");
+        builder.AppendLine("Inside the recommendations, explicitly explain what is required to be done now to meet the goal, not just what could be done.");
+        builder.AppendLine("List the offerings, showcase items, schedule changes, or capacity changes that should be implemented now, in priority order.");
+        builder.AppendLine("Name the recommended offerings clearly, for example private session, weekly workshop, weekend bootcamp, or other specific offering ideas based on the feature gaps.");
+        builder.AppendLine("6. after the recommendations, include a plain-language approval ask such as 'If you approve, reply yes and I will create X now.'");
+        builder.AppendLine("Do not tell the user to click buttons. Buttons are optional support only.");
+        builder.AppendLine("Feature performance should always be called out explicitly for the selected period when feature goal settings exist.");
+        builder.AppendLine("When the selected period is today, use a heading like 'Feature Performance Today'.");
+        builder.AppendLine("When action is needed now, include a heading like 'Immediate Actions Required'.");
+        builder.AppendLine("Always include a separate 'What to Avoid' section.");
         builder.AppendLine("If the requested period is in the past, anchor the recommendations to what should be done now in the current day, current week, and current month based on those trends.");
         builder.AppendLine("Keep the tone practical, operational, and decision-oriented.");
         builder.AppendLine("</system>");
@@ -1247,6 +1332,16 @@ public sealed class AgentCoreChatService(
     </ul>
   </div>
   <div style="padding:1rem;border:1px solid var(--sage-border);border-radius:1rem;background:var(--sage-surface);">
+    <h4 style="margin:0 0 0.5rem;">Recommendations</h4>
+    <p style="margin:0 0 0.5rem;color:var(--sage-muted);">What is required right now to move toward the goal:</p>
+    <ul style="margin:0;padding-left:1.1rem;">
+      <li>Create a Private Session offering now to recover same-day bookings.</li>
+      <li>Add a Team Workshop offering to improve this week's booking volume.</li>
+      <li>Launch a Weekend Bootcamp to close the larger monthly gap faster.</li>
+    </ul>
+    <p style="margin:0.75rem 0 0;color:var(--sage-text);font-weight:600;">If you approve, reply in text with what you want me to create now, and I will perform it.</p>
+  </div>
+  <div style="padding:1rem;border:1px solid var(--sage-border);border-radius:1rem;background:var(--sage-surface);">
     <h4 style="margin:0 0 0.5rem;">What We Should Avoid</h4>
     <ul style="margin:0;padding-left:1.1rem;">
       <li>Do not spread attention evenly across weak and strong features if the goal gap is still open.</li>
@@ -1267,36 +1362,16 @@ public sealed class AgentCoreChatService(
         PeriodMetrics currentMonth,
         CancellationToken cancellationToken)
     {
-        var periods = new (string Label, string Key)[]
-        {
-            ("Today", "today"),
-            ("This Week", "this-week"),
-            ("Yesterday", "yesterday"),
-            ("Last Week", "last-week"),
-            ("This Month", "this-month"),
-            ("Last Month", "last-month"),
-            ("Current Year", "current-year"),
-            ("Last Year", "last-year")
-        };
-
-        var actions = periods
-            .Select(period => new AgentChatActionDto
-            {
-                ActionType = "progress_report",
-                EntityType = "goal_progress",
-                TemplateKey = period.Key,
-                Label = period.Label,
-                Description = $"Prepare a progress report for the selected period '{period.Label}'. Compare actual bookings and sales against the configured Sage goal settings, explain the trend, recommend what actions should be taken next to meet or improve goals, and include what we should avoid doing. If the period is in the past, focus the recommendations on today, the current week, and the current month.",
-                Style = string.Equals(period.Key, activePeriodKey, StringComparison.OrdinalIgnoreCase) ? "primary" : "outline-primary",
-                RequiresExecution = true
-            })
-            .ToList();
+        var actions = new List<AgentChatActionDto>();
 
         var todayGap = Math.Max(0, currentDay.TargetBookingCount - currentDay.BookingCount);
         var weekGap = Math.Max(0, currentWeek.TargetBookingCount - currentWeek.BookingCount);
         var monthGap = Math.Max(0, currentMonth.TargetBookingCount - currentMonth.BookingCount);
+        var todayBehindRatio = currentDay.TargetBookingCount <= 0 ? 0 : todayGap / (decimal)currentDay.TargetBookingCount;
+        var weekBehindRatio = currentWeek.TargetBookingCount <= 0 ? 0 : weekGap / (decimal)currentWeek.TargetBookingCount;
+        var monthBehindRatio = currentMonth.TargetBookingCount <= 0 ? 0 : monthGap / (decimal)currentMonth.TargetBookingCount;
 
-        if (todayGap > 0)
+        if (todayGap >= 1 && todayBehindRatio >= 0.5m)
         {
             actions.Add(CreateTemplateAction(
                 "offering",
@@ -1306,7 +1381,7 @@ public sealed class AgentCoreChatService(
                 "success"));
         }
 
-        if (weekGap > 0)
+        if (weekGap >= 3 && weekBehindRatio >= 0.35m)
         {
             actions.Add(CreateTemplateAction(
                 "offering",
@@ -1316,7 +1391,7 @@ public sealed class AgentCoreChatService(
                 "success"));
         }
 
-        if (monthGap > 0)
+        if (monthGap >= 8 && monthBehindRatio >= 0.25m)
         {
             actions.Add(CreateTemplateAction(
                 "offering",
@@ -1330,7 +1405,7 @@ public sealed class AgentCoreChatService(
             .AsNoTracking()
             .AnyAsync(x => x.OwnerId == ownerId && x.IsActive, cancellationToken);
 
-        if (!hasActiveShowcasePages && (todayGap > 0 || weekGap > 0 || monthGap > 0 || requested.BookingCount <= requested.TargetBookingCount))
+        if (!hasActiveShowcasePages && (todayBehindRatio >= 0.65m || weekBehindRatio >= 0.45m || monthBehindRatio >= 0.35m))
         {
             actions.Add(CreateTemplateAction(
                 "showcase_page",
@@ -1340,45 +1415,11 @@ public sealed class AgentCoreChatService(
                 "outline-primary"));
         }
 
-        actions.Add(NavigateAction("/sage-goals", "Open Sage Goal Settings", "Review or adjust the goal settings that drive this report."));
-
-        return actions;
+        return actions.Take(2).ToList();
     }
 
     private static string StripHtml(string html)
         => Regex.Replace(html, "<.*?>", string.Empty).Trim();
-
-    private static string PrependProgressActionGuidanceHtml(string reportHtml, IReadOnlyCollection<AgentChatActionDto> actions)
-    {
-        var recommended = actions
-            .Where(action => action.RequiresExecution)
-            .Take(3)
-            .ToList();
-
-        if (recommended.Count == 0)
-        {
-            return reportHtml;
-        }
-
-        var suggestionText = recommended.Count switch
-        {
-            1 => $"My recommendation is to {recommended[0].Label.ToLowerInvariant()}.",
-            2 => $"My recommendations are to {recommended[0].Label.ToLowerInvariant()} or {recommended[1].Label.ToLowerInvariant()}.",
-            _ => $"My strongest next actions are to {recommended[0].Label.ToLowerInvariant()}, {recommended[1].Label.ToLowerInvariant()}, or {recommended[2].Label.ToLowerInvariant()}."
-        };
-
-        const string permissionText = "If you want, I can implement one of these now. Use the button below to confirm the action you want me to perform.";
-
-        var introHtml = $"""
-<div style="display:grid;gap:0.65rem;margin-bottom:0.9rem;padding:1rem;border:1px solid var(--sage-border);border-radius:1rem;background:var(--sage-surface-muted);">
-  <div style="font-size:0.78rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--sage-muted);">Recommended Next Step</div>
-  <p style="margin:0;color:var(--sage-text);font-weight:600;">{WebUtility.HtmlEncode(suggestionText)}</p>
-  <p style="margin:0;color:var(--sage-muted);">{WebUtility.HtmlEncode(permissionText)}</p>
-</div>
-""";
-
-        return $"{introHtml}{reportHtml}";
-    }
 
     private async Task<AgentChatResponse> CreateShowcasePageFromTemplateAsync(
         string sessionId,
