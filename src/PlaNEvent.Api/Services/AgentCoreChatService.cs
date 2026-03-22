@@ -257,7 +257,14 @@ public sealed class AgentCoreChatService(
             .Include(x => x.Features.OrderBy(f => f.SortOrder).ThenBy(f => f.Id))
             .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
 
-        if (settings is null)
+        var overrideSettings = await dbContext.SageGoalOverrideSettings
+            .AsNoTracking()
+            .Include(x => x.Features.OrderBy(f => f.SortOrder).ThenBy(f => f.Id))
+            .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
+
+        var effectiveSettings = SageGoalSettingsResolver.ResolveEffectiveSettings(settings, overrideSettings);
+
+        if (settings is null && overrideSettings is null)
         {
             return prompt;
         }
@@ -265,15 +272,15 @@ public sealed class AgentCoreChatService(
         var summaryLines = new List<string>
         {
             "This facility has saved business guidance you should use when suggesting offerings, showcase pages, and promotional booking strategies.",
-            $"Facility business summary: {settings.FacilityBusinessSummary}",
-            $"Expected monthly booking count target: {settings.ExpectedMonthlyBookingCount}",
-            $"Expected monthly sales amount target: {settings.ExpectedMonthlySalesAmount:0.##}"
+            $"Facility business summary: {effectiveSettings.FacilityBusinessSummary}",
+            $"Expected monthly booking count target: {effectiveSettings.ExpectedMonthlyBookingCount}",
+            $"Expected monthly sales amount target: {effectiveSettings.ExpectedMonthlySalesAmount:0.##}"
         };
 
-        if (settings.Features.Count > 0)
+        if (effectiveSettings.Features.Count > 0)
         {
             summaryLines.Add("Feature targets:");
-            summaryLines.AddRange(settings.Features
+            summaryLines.AddRange(effectiveSettings.Features
                 .OrderBy(x => x.SortOrder)
                 .Select(x => $"- {x.Name}: target share {x.TargetSharePercent:0.##}%, expected bookings {x.ExpectedMonthlyBookingCount}, expected sales {x.ExpectedMonthlySalesAmount:0.##}"));
         }
@@ -760,6 +767,13 @@ public sealed class AgentCoreChatService(
             .Include(x => x.Features.OrderBy(f => f.SortOrder).ThenBy(f => f.Id))
             .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
 
+        var overrideSettings = await dbContext.SageGoalOverrideSettings
+            .AsNoTracking()
+            .Include(x => x.Features.OrderBy(f => f.SortOrder).ThenBy(f => f.Id))
+            .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
+
+        var effectiveSettings = SageGoalSettingsResolver.ResolveEffectiveSettings(settings, overrideSettings);
+
         var occurrences = await dbContext.Occurrences
             .AsNoTracking()
             .Include(x => x.Offering)
@@ -775,15 +789,15 @@ public sealed class AgentCoreChatService(
             .Where(x => x.Occurrence != null && x.Occurrence.OwnerId == ownerId && x.OccurrenceSlot != null)
             .ToListAsync(cancellationToken);
 
-        var requestedMetrics = BuildPeriodMetrics(requestedPeriod, occurrences, bookings, settings, timeZone);
-        var comparisonMetrics = BuildPeriodMetrics(comparisonPeriod, occurrences, bookings, settings, timeZone);
-        var currentDayMetrics = BuildPeriodMetrics(currentDayPeriod, occurrences, bookings, settings, timeZone);
-        var currentWeekMetrics = BuildPeriodMetrics(currentWeekPeriod, occurrences, bookings, settings, timeZone);
-        var currentMonthMetrics = BuildPeriodMetrics(currentMonthPeriod, occurrences, bookings, settings, timeZone);
+        var requestedMetrics = BuildPeriodMetrics(requestedPeriod, occurrences, bookings, effectiveSettings, timeZone);
+        var comparisonMetrics = BuildPeriodMetrics(comparisonPeriod, occurrences, bookings, effectiveSettings, timeZone);
+        var currentDayMetrics = BuildPeriodMetrics(currentDayPeriod, occurrences, bookings, effectiveSettings, timeZone);
+        var currentWeekMetrics = BuildPeriodMetrics(currentWeekPeriod, occurrences, bookings, effectiveSettings, timeZone);
+        var currentMonthMetrics = BuildPeriodMetrics(currentMonthPeriod, occurrences, bookings, effectiveSettings, timeZone);
 
         var reportPrompt = BuildProgressReportPrompt(
             sourceMessage,
-            settings,
+            effectiveSettings,
             requestedMetrics,
             comparisonMetrics,
             currentDayMetrics,

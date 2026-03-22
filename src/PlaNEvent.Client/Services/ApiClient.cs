@@ -32,6 +32,19 @@ public sealed class ApiClient(HttpClient httpClient, TokenAuthenticationStatePro
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<SageGoalSettingsDto>() : null;
     }
 
+    public async Task<SageGoalOverrideSettingsDto?> SageGoalOverrideSettingsAsync()
+    {
+        await AttachTokenAsync();
+        return await httpClient.GetFromJsonAsync<SageGoalOverrideSettingsDto>("api/sage-goal-overrides");
+    }
+
+    public async Task<SageGoalOverrideSettingsDto?> SaveSageGoalOverrideSettingsAsync(SageGoalOverrideSettingsDto request)
+    {
+        await AttachTokenAsync();
+        var response = await httpClient.PutAsJsonAsync("api/sage-goal-overrides", request);
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<SageGoalOverrideSettingsDto>() : null;
+    }
+
     public async Task<OccurrencePageDto?> OccurrencesAsync(DateTime? startUtc = null, DateTime? endUtc = null, int page = 1, int pageSize = 20)
     {
         await AttachTokenAsync();

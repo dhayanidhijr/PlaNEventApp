@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlaNEvent.Api.Data;
+using PlaNEvent.Api.Services;
 using PlaNEvent.Shared.Contracts;
 
 namespace PlaNEvent.Api.Controllers;
@@ -42,6 +43,13 @@ public sealed class HomeDashboardController(AppDbContext dbContext) : Controller
         var settings = await dbContext.SageGoalSettings
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
+
+        var overrideSettings = await dbContext.SageGoalOverrideSettings
+            .AsNoTracking()
+            .Include(x => x.Features)
+            .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
+
+        var effectiveSettings = SageGoalSettingsResolver.ResolveEffectiveSettings(settings, overrideSettings);
 
         var entries = occurrences
             .SelectMany(occurrence => occurrence.Slots.Select(slot => new SlotEntry(
@@ -93,7 +101,7 @@ public sealed class HomeDashboardController(AppDbContext dbContext) : Controller
         var monthEnd = monthStart.AddMonths(1).AddDays(-1);
         var yearStart = new DateTime(todayLocal.Year, 1, 1);
 
-        var monthlyTarget = settings?.ExpectedMonthlyBookingCount ?? 0;
+        var monthlyTarget = effectiveSettings.ExpectedMonthlyBookingCount;
 
         var result = new HomeDashboardDto
         {

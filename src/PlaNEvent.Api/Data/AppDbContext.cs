@@ -21,6 +21,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<SageGoalSettings> SageGoalSettings => Set<SageGoalSettings>();
     public DbSet<SageGoalFeature> SageGoalFeatures => Set<SageGoalFeature>();
+    public DbSet<SageGoalOverrideSettings> SageGoalOverrideSettings => Set<SageGoalOverrideSettings>();
+    public DbSet<SageGoalOverrideFeature> SageGoalOverrideFeatures => Set<SageGoalOverrideFeature>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -120,6 +122,16 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             .HasMany(x => x.Features)
             .WithOne(x => x.SageGoalSettings)
             .HasForeignKey(x => x.SageGoalSettingsId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<SageGoalOverrideSettings>()
+            .HasIndex(x => x.OwnerId)
+            .IsUnique();
+
+        builder.Entity<SageGoalOverrideSettings>()
+            .HasMany(x => x.Features)
+            .WithOne(x => x.SageGoalOverrideSettings)
+            .HasForeignKey(x => x.SageGoalOverrideSettingsId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
