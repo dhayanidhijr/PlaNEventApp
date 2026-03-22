@@ -6,6 +6,7 @@
 @inject IJSRuntime Js
 @inject TokenAuthenticationStateProvider AuthStateProvider
 @inject NavigationManager NavigationManager
+@inject PlaNEvent.Client.Services.DisplaySettingsService DisplaySettings
 
 @if (OverlayState.IsOpen)
 {
@@ -106,7 +107,7 @@
 
 @code {
     private const string ThinkingPlaceholder = "Sage is thinking...";
-    private const string HtmlResponseInstruction = @"<system>
+    private string HtmlResponseInstruction => $@"<system>
 Always respond as a valid formatted HTML fragment suitable for direct rendering in the chat UI.
 Return HTML only.
 Do not return Markdown.
@@ -120,6 +121,7 @@ Prefer clean card, badge, chip, and grid layouts for structured data.
 Honor the active app theme by using CSS variables instead of hardcoded colors whenever possible.
 Prefer these theme-aware variables in inline styles: var(--sage-surface), var(--sage-surface-muted), var(--sage-border), var(--sage-text), var(--sage-muted), and var(--sage-accent).
 Avoid hardcoded white, black, or pale blue panel backgrounds unless there is no better option.
+The active client theme right now is '{DisplaySettings.Theme}'.
 Keep the inline styling lightweight and chat-friendly.
 </system>
 

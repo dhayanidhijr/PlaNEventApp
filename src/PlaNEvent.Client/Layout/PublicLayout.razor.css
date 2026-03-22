@@ -1,6 +1,5 @@
 .public-layout-shell {
     min-height: 100vh;
-    zoom: var(--app-scale-factor);
     background:
         radial-gradient(circle at top left, rgba(255, 205, 130, 0.35), transparent 28%),
         radial-gradient(circle at top right, rgba(92, 144, 255, 0.24), transparent 24%),

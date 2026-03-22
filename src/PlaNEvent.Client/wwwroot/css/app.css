@@ -98,6 +98,70 @@ html, body {
     color: var(--app-text);
 }
 
+body,
+.text-muted,
+.form-label,
+label,
+.card,
+.card-body,
+.card-header,
+.table,
+.table th,
+.table td {
+    color: var(--app-text);
+}
+
+.card,
+.modal-content,
+.dropdown-menu,
+.list-group-item,
+.alert,
+.table,
+.table-striped > tbody > tr:nth-of-type(odd) > *,
+.table-hover > tbody > tr:hover > * {
+    background-color: var(--app-surface);
+    border-color: var(--app-border);
+}
+
+.form-control,
+.form-select,
+.form-check-input,
+textarea,
+input,
+select {
+    background-color: var(--app-surface);
+    color: var(--app-text);
+    border-color: var(--app-border);
+}
+
+.form-control::placeholder,
+textarea::placeholder,
+input::placeholder {
+    color: var(--app-muted);
+}
+
+.btn-light,
+.btn-outline-secondary,
+.btn-outline-dark {
+    background-color: var(--app-surface);
+    color: var(--app-text);
+    border-color: var(--app-border);
+}
+
+.btn-light:hover,
+.btn-outline-secondary:hover,
+.btn-outline-dark:hover {
+    background-color: var(--app-surface-alt);
+    color: var(--app-text-strong);
+    border-color: var(--app-border-strong);
+}
+
+.alert-info {
+    background-color: color-mix(in srgb, var(--app-accent) 10%, var(--app-surface));
+    color: var(--app-text);
+    border-color: color-mix(in srgb, var(--app-accent) 28%, var(--app-border));
+}
+
 h1:focus {
     outline: none;
 }
@@ -271,7 +335,6 @@ code {
     display: flex;
     min-height: 100vh;
     background: var(--app-bg);
-    zoom: var(--app-scale-factor);
 }
 
 .app-sidebar {

@@ -74,14 +74,14 @@ public sealed class DisplaySettingsService
 
     private static int NormalizeScale(int scalePercent)
     {
-        if (scalePercent < 50)
+        if (scalePercent < 75)
         {
-            return 50;
+            return 75;
         }
 
-        if (scalePercent > 500)
+        if (scalePercent > 200)
         {
-            return 500;
+            return 200;
         }
 
         return scalePercent;
