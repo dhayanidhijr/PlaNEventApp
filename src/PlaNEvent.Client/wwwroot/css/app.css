@@ -96,9 +96,9 @@ html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     background: var(--app-bg);
     color: var(--app-text);
-    min-width: 100%;
-    min-height: 100%;
-    overflow: auto;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
 }
 
 body {
@@ -106,15 +106,21 @@ body {
 }
 
 #app {
-    min-height: 100vh;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
 }
 
 .app-scale-root {
+    position: fixed;
+    inset: 0;
     width: calc(100vw / var(--app-scale-factor));
-    min-width: calc(100vw / var(--app-scale-factor));
+    height: calc(100vh / var(--app-scale-factor));
     min-height: calc(100vh / var(--app-scale-factor));
+    min-width: calc(100vw / var(--app-scale-factor));
     transform: scale(var(--app-scale-factor));
     transform-origin: top left;
+    overflow: hidden;
 }
 
 body,
@@ -352,8 +358,11 @@ code {
 /* App shell fallback global styles to avoid scoped-css rendering mismatches */
 .app-shell {
     display: flex;
-    min-height: 100vh;
+    width: 100%;
+    min-height: calc(100vh / var(--app-scale-factor));
+    height: calc(100vh / var(--app-scale-factor));
     background: var(--app-bg);
+    overflow: hidden;
 }
 
 .app-sidebar {
@@ -361,20 +370,36 @@ code {
     background: linear-gradient(180deg, var(--app-sidebar-top) 0%, var(--app-sidebar-bottom) 100%);
     box-shadow: 2px 0 18px rgba(10, 21, 40, 0.18);
     flex-shrink: 0;
+    height: 100%;
+    overflow: auto;
 }
 
 .app-main {
     flex: 1;
     min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .app-topbar {
     height: 62px;
+    min-height: 62px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     background: var(--app-surface-alt);
     border-bottom: 1px solid var(--app-border);
+    flex-shrink: 0;
+}
+
+.app-content {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding-top: 1rem;
+    padding-bottom: 1rem;
 }
 
 .app-topbar-left {

@@ -33,34 +33,48 @@ public sealed class DisplaySettingsService
             Theme = NormalizeTheme(settings.Theme);
             ScalePercent = NormalizeScale(settings.ScalePercent);
         }
-        catch
+        catch (JSException)
+        {
+            Theme = DefaultTheme;
+            ScalePercent = DefaultScalePercent;
+        }
+        catch (InvalidOperationException)
         {
             Theme = DefaultTheme;
             ScalePercent = DefaultScalePercent;
         }
 
         initialized = true;
-        await ApplyAsync();
+        await TryApplyAsync();
         Changed?.Invoke();
     }
 
     public async Task SetThemeAsync(string theme)
     {
         Theme = NormalizeTheme(theme);
-        await ApplyAsync();
+        await TryApplyAsync();
         Changed?.Invoke();
     }
 
     public async Task SetScalePercentAsync(int scalePercent)
     {
         ScalePercent = NormalizeScale(scalePercent);
-        await ApplyAsync();
+        await TryApplyAsync();
         Changed?.Invoke();
     }
 
-    private async Task ApplyAsync()
+    private async Task TryApplyAsync()
     {
-        await jsRuntime.InvokeVoidAsync("planeventDisplay.applySettings", Theme, ScalePercent);
+        try
+        {
+            await jsRuntime.InvokeVoidAsync("planeventDisplay.applySettings", Theme, ScalePercent);
+        }
+        catch (JSException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     private static string NormalizeTheme(string? theme) => theme?.Trim().ToLowerInvariant() switch

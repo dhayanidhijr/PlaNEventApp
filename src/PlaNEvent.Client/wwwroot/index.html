@@ -27,6 +27,23 @@
         <a class="dismiss">x</a>
     </div>
 
+    <script>
+        window.planeventDisplay = window.planeventDisplay || {
+            getSettings: function () {
+                return { theme: "color", scalePercent: 100 };
+            },
+            applySettings: function (theme, scalePercent) {
+                const safeTheme = (theme || "color").toLowerCase();
+                const parsedScale = parseInt(scalePercent, 10);
+                const safeScalePercent = Number.isFinite(parsedScale) ? Math.min(200, Math.max(75, parsedScale)) : 100;
+                const zoomFactor = 100 / safeScalePercent;
+
+                document.documentElement.setAttribute("data-theme", safeTheme);
+                document.documentElement.style.setProperty("--app-scale-factor", zoomFactor.toString());
+                document.documentElement.style.setProperty("--app-scale-percent", safeScalePercent.toString());
+            }
+        };
+    </script>
     <script src="auth.js"></script>
     <script src="display-settings.js"></script>
     <script src="agent-chat-stream.js"></script>
