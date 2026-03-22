@@ -46,9 +46,8 @@
                             <div class="staff-meta">
                                 <span>@person.OfferingMappings.Count offering(s) assigned</span>
                                 <div class="staff-card-actions">
-                                    <button class="btn btn-sm btn-light" @onclick="() => SelectStaff(person.Id)">Edit</button>
-                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => SelectStaffAndFocusMappings(person.Id)">Assign Offerings</button>
                                     <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenCalendar(person)">View Calendar</button>
+                                    <button class="btn btn-sm btn-light" @onclick="() => SelectStaff(person.Id)">Edit</button>
                                 </div>
                             </div>
                         </div>
@@ -61,7 +60,7 @@
             <div class="panel-header">
                 <div>
                     <h3 class="mb-0">@((model.Id > 0) ? "Edit Staff Member" : "Create Staff Member")</h3>
-                    <div class="panel-muted">Map offerings and define proficiency level for each trainer.</div>
+                    <div class="panel-muted">Use Edit to assign or remove offerings and update trainer details.</div>
                 </div>
             </div>
 
@@ -85,7 +84,7 @@
                                         class="star-btn @(active ? "active" : string.Empty)"
                                         title="@($"{star} star{(star == 1 ? string.Empty : "s")}")"
                                         aria-label="@($"{star} star{(star == 1 ? string.Empty : "s")}")"
-                                        @onclick="() => SetRating(star)">★</button>
+                                        @onclick="() => SetRating(star)">@StarSymbol</button>
                             }
                         </div>
                         <div class="panel-muted">Selected: @DisplayStars(model.TrainingQualityRating)</div>
@@ -95,15 +94,15 @@
                 <div class="mapping-shell">
                     <div class="mapping-header">
                         <div>
-                            <h4 class="mb-0">Offering Proficiency</h4>
-                            <div class="panel-muted">Assign the offerings each staff member can deliver.</div>
+                            <h4 class="mb-0">Assigned Offerings</h4>
+                            <div class="panel-muted">Add, change, or remove the offerings this staff member can handle.</div>
                         </div>
                         <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AddMapping">Add Offering</button>
                     </div>
 
                     @if (model.OfferingMappings.Count == 0)
                     {
-                        <div class="empty-inline">No offerings mapped yet.</div>
+                        <div class="empty-inline">No offerings assigned yet.</div>
                     }
                     else
                     {
@@ -219,6 +218,8 @@
 }
 
 @code {
+    private const string StarSymbol = "\u2605";
+
     private static readonly string[] ProficiencyOptions =
     [
         "Beginner",
@@ -284,12 +285,7 @@
 
         selectedStaffId = id;
         model = CloneStaff(selected);
-        status = null;
-    }
-
-    private void SelectStaffAndFocusMappings(int id)
-    {
-        SelectStaff(id);
+        status = "Editing staff details. You can assign or remove offerings below.";
     }
 
     private void AddMapping()
@@ -435,7 +431,7 @@
     private static string DisplayStars(decimal rating)
     {
         var filled = (int)Math.Clamp(decimal.ToInt32(decimal.Round(rating, 0, MidpointRounding.AwayFromZero)), 0, 5);
-        return string.Concat(Enumerable.Repeat("★", filled)) + string.Concat(Enumerable.Repeat("☆", 5 - filled));
+        return $"{filled}/5 stars";
     }
 
     private static DateTime ToUtcStart(DateTime localDate)
