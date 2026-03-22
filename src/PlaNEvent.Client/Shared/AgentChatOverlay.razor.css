@@ -146,6 +146,16 @@
 }
 
 @media (max-width: 960px) {
+    :global(.agent-chat-panel) {
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    :global(.agent-chat-resize-handle) {
+        display: none;
+    }
+
     .verification-panel {
         width: min(100vw, 34rem);
         margin-left: 0;

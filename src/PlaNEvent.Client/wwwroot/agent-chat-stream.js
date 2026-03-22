@@ -28,6 +28,57 @@
     }
 
     window.planeventAgentChat = {
+        initResize: function (panelId, handleId) {
+            const panel = document.getElementById(panelId);
+            const handle = document.getElementById(handleId);
+            if (!panel || !handle) {
+                return;
+            }
+
+            const clampWidthPercent = function (value) {
+                return Math.min(88, Math.max(30, value));
+            };
+
+            const applyWidth = function (widthPercent) {
+                const safeWidth = clampWidthPercent(widthPercent);
+                panel.style.width = `${safeWidth}%`;
+                localStorage.setItem("planevent.agentChat.widthPercent", safeWidth.toString());
+            };
+
+            if (!panel.dataset.widthInitialized) {
+                const savedWidth = parseFloat(localStorage.getItem("planevent.agentChat.widthPercent") || "60");
+                applyWidth(Number.isFinite(savedWidth) ? savedWidth : 60);
+                panel.dataset.widthInitialized = "true";
+            }
+
+            if (handle.dataset.resizeBound) {
+                return;
+            }
+
+            handle.dataset.resizeBound = "true";
+            handle.addEventListener("mousedown", function (event) {
+                event.preventDefault();
+
+                const overlay = panel.parentElement;
+                if (!overlay) {
+                    return;
+                }
+
+                const onMove = function (moveEvent) {
+                    const overlayRect = overlay.getBoundingClientRect();
+                    const widthPercent = ((overlayRect.right - moveEvent.clientX) / overlayRect.width) * 100;
+                    applyWidth(widthPercent);
+                };
+
+                const onUp = function () {
+                    window.removeEventListener("mousemove", onMove);
+                    window.removeEventListener("mouseup", onUp);
+                };
+
+                window.addEventListener("mousemove", onMove);
+                window.addEventListener("mouseup", onUp);
+            });
+        },
         scrollToBottom: function (elementId) {
             const element = document.getElementById(elementId);
             if (!element) {

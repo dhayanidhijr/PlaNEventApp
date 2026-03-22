@@ -11,7 +11,8 @@
 @if (OverlayState.IsOpen)
 {
     <div class="agent-chat-overlay" @onclick="CloseIfBackdrop">
-        <div class="agent-chat-panel" @onclick:stopPropagation>
+        <div class="agent-chat-panel" id="agent-chat-panel" @onclick:stopPropagation>
+            <div class="agent-chat-resize-handle" id="agent-chat-resize-handle"></div>
             <div class="agent-chat-header">
                 <strong>Sage AI</strong>
                 <div class="d-flex gap-2">
@@ -141,6 +142,11 @@ Keep the inline styling lightweight and chat-friendly.
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (OverlayState.IsOpen)
+        {
+            await Js.InvokeVoidAsync("planeventAgentChat.initResize", "agent-chat-panel", "agent-chat-resize-handle");
+        }
+
         if (shouldAutoScroll)
         {
             shouldAutoScroll = false;

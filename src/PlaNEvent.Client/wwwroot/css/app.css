@@ -709,7 +709,10 @@ code {
 }
 
 .agent-chat-panel {
-    width: min(520px, 94vw);
+    position: relative;
+    width: 60%;
+    min-width: 24rem;
+    max-width: 88%;
     height: 100%;
     background: var(--sage-surface);
     color: var(--sage-text);
@@ -717,6 +720,27 @@ code {
     box-shadow: -8px 0 26px rgba(11, 25, 46, 0.2);
     display: flex;
     flex-direction: column;
+}
+
+.agent-chat-resize-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 0.6rem;
+    cursor: col-resize;
+    background: transparent;
+    z-index: 2;
+}
+
+.agent-chat-resize-handle::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0.22rem;
+    width: 2px;
+    background: color-mix(in srgb, var(--sage-border) 78%, transparent);
 }
 
 .agent-chat-header {
