@@ -1,7 +1,6 @@
 @page "/sage-goal-overrides"
 @attribute [Authorize]
 @inject ApiClient ApiClient
-@inject PlaNEvent.Client.Services.AgentChatOverlayState AgentOverlayState
 
 <div class="module-header">
     <div>
@@ -230,9 +229,8 @@ else
         }
 
         model = saved;
-        AgentOverlayState.ResetSession();
         saveSucceeded = true;
-        status = "Goal override settings saved successfully. Sage will use these changes on the next chat request.";
+        status = "Goal override settings saved successfully.";
     }
 
     private decimal TotalEnabledTargetShare()

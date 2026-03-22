@@ -155,12 +155,6 @@ public sealed class AgentChatOverlayState
         Changed?.Invoke();
     }
 
-    public void ResetSession()
-    {
-        SessionId = null;
-        Changed?.Invoke();
-    }
-
     public sealed record ChatLine(
         bool IsUser,
         string Text,
