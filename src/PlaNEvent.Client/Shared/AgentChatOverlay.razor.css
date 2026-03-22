@@ -1,3 +1,16 @@
+.agent-chat-header-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.agent-chat-select {
+    width: auto;
+    min-width: 6.5rem;
+}
+
 .agent-msg.is-thinking .agent-msg-role,
 .agent-msg.is-streaming .agent-msg-role {
     opacity: 0.9;
@@ -157,6 +170,16 @@
 }
 
 @media (max-width: 960px) {
+    .agent-chat-header-controls {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .agent-chat-select {
+        min-width: 0;
+        flex: 1 1 8rem;
+    }
+
     :global(.agent-chat-panel) {
         width: 100%;
         min-width: 0;

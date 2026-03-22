@@ -16,7 +16,19 @@
             <div class="agent-chat-resize-handle" id="agent-chat-resize-handle"></div>
             <div class="agent-chat-header">
                 <strong>Sage AI</strong>
-                <div class="d-flex gap-2">
+                <div class="agent-chat-header-controls">
+                    <select class="form-select form-select-sm agent-chat-select" value="@DisplaySettings.Theme" @onchange="OnThemeChanged">
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                        <option value="grayscale">Grayscale</option>
+                        <option value="color">Color</option>
+                    </select>
+                    <select class="form-select form-select-sm agent-chat-select" value="@DisplaySettings.ScalePercent" @onchange="OnScaleChanged">
+                        @foreach (var scaleOption in ScaleOptions)
+                        {
+                            <option value="@scaleOption">@($"{scaleOption}%")</option>
+                        }
+                    </select>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="ClearConversation" disabled="@isSending">New Chat</button>
                     <button class="btn btn-sm btn-light" @onclick="Close">Close</button>
                 </div>
@@ -119,6 +131,7 @@
 
 @code {
     private const string ThinkingPlaceholder = "Sage is thinking...";
+    private static readonly int[] ScaleOptions = [75, 85, 95, 105, 115, 125, 135, 145, 155, 165, 175, 185, 195, 200];
     private string HtmlResponseInstruction => $@"<system>
 Always respond as a valid formatted HTML fragment suitable for direct rendering in the chat UI.
 Return HTML only.
@@ -229,6 +242,19 @@ Keep the inline styling lightweight and chat-friendly.
             OverlayState.ClearConversation();
             activeVerification = null;
             isStartingDefaultReport = false;
+        }
+    }
+
+    private async Task OnThemeChanged(ChangeEventArgs args)
+    {
+        await DisplaySettings.SetThemeAsync(args.Value?.ToString() ?? "color");
+    }
+
+    private async Task OnScaleChanged(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var scalePercent))
+        {
+            await DisplaySettings.SetScalePercentAsync(scalePercent);
         }
     }
 
