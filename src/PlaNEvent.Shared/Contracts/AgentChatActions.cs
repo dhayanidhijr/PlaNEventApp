@@ -8,6 +8,7 @@ public sealed class AgentChatActionRequest
     public string TemplateKey { get; set; } = string.Empty;
     public string Label { get; set; } = string.Empty;
     public string SourceMessage { get; set; } = string.Empty;
+    public string TimeZoneId { get; set; } = "America/New_York";
 }
 
 public sealed class AgentChatActionDto

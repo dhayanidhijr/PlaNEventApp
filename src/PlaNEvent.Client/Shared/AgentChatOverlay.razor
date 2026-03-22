@@ -7,6 +7,7 @@
 @inject TokenAuthenticationStateProvider AuthStateProvider
 @inject NavigationManager NavigationManager
 @inject PlaNEvent.Client.Services.DisplaySettingsService DisplaySettings
+@inject PlaNEvent.Client.Services.TimeZoneState TimeZoneState
 
 @if (OverlayState.IsOpen)
 {
@@ -24,7 +25,17 @@
             <div class="agent-chat-body" id="agent-chat-body">
                 @if (messages.Count == 0)
                 {
-                    <p class="agent-chat-muted">Connected to Sage AI. Ask about bookings, occurrences, staff, groups, customers, or account actions.</p>
+                    <div class="agent-chat-starter">
+                        <p class="agent-chat-muted">Want to see progress report for</p>
+                        <div class="agent-msg-actions starter-actions">
+                            @foreach (var action in StarterActions())
+                            {
+                                <button type="button" class="btn @ActionButtonClass(action) btn-sm" @onclick="() => HandleActionAsync(action)">
+                                    @action.Label
+                                </button>
+                            }
+                        </div>
+                    </div>
                 }
                 else
                 {
@@ -236,7 +247,8 @@ Keep the inline styling lightweight and chat-friendly.
                     EntityType = action.EntityType,
                     TemplateKey = action.TemplateKey,
                     Label = action.Label,
-                    SourceMessage = action.Description
+                    SourceMessage = action.Description,
+                    TimeZoneId = TimeZoneState.SelectedTimeZoneId
                 });
 
                 if (response is null)
@@ -297,6 +309,31 @@ Keep the inline styling lightweight and chat-friendly.
         "success" => "btn-success",
         _ => "btn-outline-secondary"
     };
+
+    private IReadOnlyList<AgentChatActionDto> StarterActions()
+        => new[]
+        {
+            ProgressAction("Today", "today"),
+            ProgressAction("This Week", "this-week"),
+            ProgressAction("Yesterday", "yesterday"),
+            ProgressAction("Last Week", "last-week"),
+            ProgressAction("This Month", "this-month"),
+            ProgressAction("Last Month", "last-month"),
+            ProgressAction("Current Year", "current-year"),
+            ProgressAction("Last Year", "last-year")
+        };
+
+    private AgentChatActionDto ProgressAction(string label, string periodKey)
+        => new()
+        {
+            ActionType = "progress_report",
+            EntityType = "goal_progress",
+            TemplateKey = periodKey,
+            Label = label,
+            Description = $"{HtmlResponseInstruction}Prepare a progress report for the selected period '{label}'. Compare actual bookings and sales against the configured Sage goal settings, explain the trend, and recommend what actions should be taken next to meet or improve goals. If the selected period is in the past, explicitly recommend what we should do now in the current day/week/month based on those past trends, and what we should avoid doing.",
+            Style = "outline-primary",
+            RequiresExecution = true
+        };
 
     public void Dispose()
     {

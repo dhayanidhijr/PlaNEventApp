@@ -145,6 +145,18 @@ public sealed class AgentCoreChatService(
 
         if (!string.Equals(request.ActionType, "create_template", StringComparison.OrdinalIgnoreCase))
         {
+            if (string.Equals(request.ActionType, "progress_report", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    return await BuildProgressReportAsync(sessionId, ownerId, request.TemplateKey, request.SourceMessage, request.TimeZoneId, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    return ErrorResponse(sessionId, $"Progress report failed: {ex.Message}");
+                }
+            }
+
             return ErrorResponse(sessionId, $"Unsupported agent action '{request.ActionType}'.");
         }
 
@@ -692,6 +704,83 @@ public sealed class AgentCoreChatService(
         return Task.FromResult(action);
     }
 
+    private async Task<AgentChatResponse> BuildProgressReportAsync(
+        string sessionId,
+        string ownerId,
+        string periodKey,
+        string sourceMessage,
+        string? timeZoneId,
+        CancellationToken cancellationToken)
+    {
+        var timeZone = ResolveTimeZone(timeZoneId);
+        var nowLocal = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, timeZone);
+        var requestedPeriod = ResolveReportPeriod(periodKey, nowLocal);
+        var currentDayPeriod = ResolveReportPeriod("today", nowLocal);
+        var currentWeekPeriod = ResolveReportPeriod("this-week", nowLocal);
+        var currentMonthPeriod = ResolveReportPeriod("this-month", nowLocal);
+        var comparisonPeriod = ResolveComparisonPeriod(periodKey, nowLocal);
+
+        var settings = await dbContext.SageGoalSettings
+            .AsNoTracking()
+            .Include(x => x.Features.OrderBy(f => f.SortOrder).ThenBy(f => f.Id))
+            .FirstOrDefaultAsync(x => x.OwnerId == ownerId, cancellationToken);
+
+        var occurrences = await dbContext.Occurrences
+            .AsNoTracking()
+            .Include(x => x.Offering)
+            .Include(x => x.Slots)
+            .Where(x => x.OwnerId == ownerId)
+            .ToListAsync(cancellationToken);
+
+        var bookings = await dbContext.Bookings
+            .AsNoTracking()
+            .Include(x => x.Occurrence)
+            .ThenInclude(x => x!.Offering)
+            .Include(x => x.OccurrenceSlot)
+            .Where(x => x.Occurrence != null && x.Occurrence.OwnerId == ownerId && x.OccurrenceSlot != null)
+            .ToListAsync(cancellationToken);
+
+        var requestedMetrics = BuildPeriodMetrics(requestedPeriod, occurrences, bookings, settings, timeZone);
+        var comparisonMetrics = BuildPeriodMetrics(comparisonPeriod, occurrences, bookings, settings, timeZone);
+        var currentDayMetrics = BuildPeriodMetrics(currentDayPeriod, occurrences, bookings, settings, timeZone);
+        var currentWeekMetrics = BuildPeriodMetrics(currentWeekPeriod, occurrences, bookings, settings, timeZone);
+        var currentMonthMetrics = BuildPeriodMetrics(currentMonthPeriod, occurrences, bookings, settings, timeZone);
+
+        var reportPrompt = BuildProgressReportPrompt(
+            sourceMessage,
+            settings,
+            requestedMetrics,
+            comparisonMetrics,
+            currentDayMetrics,
+            currentWeekMetrics,
+            currentMonthMetrics,
+            nowLocal,
+            timeZone);
+
+        string htmlReply;
+        try
+        {
+            var runtimePrompt = await BuildRuntimePromptAsync(reportPrompt, cancellationToken);
+            var result = await InvokeAndExtractAsync(runtimePrompt, sessionId, cancellationToken);
+            sessionId = result.SessionId;
+            htmlReply = string.IsNullOrWhiteSpace(result.Reply)
+                ? BuildFallbackProgressHtml(requestedMetrics, comparisonMetrics, currentDayMetrics, currentWeekMetrics, currentMonthMetrics, nowLocal)
+                : result.Reply.Trim();
+        }
+        catch
+        {
+            htmlReply = BuildFallbackProgressHtml(requestedMetrics, comparisonMetrics, currentDayMetrics, currentWeekMetrics, currentMonthMetrics, nowLocal);
+        }
+
+        return new AgentChatResponse
+        {
+            SessionId = sessionId,
+            Reply = StripHtml(htmlReply),
+            HtmlReply = htmlReply,
+            Actions = BuildProgressReportActions(periodKey)
+        };
+    }
+
     private async Task<AgentChatResponse> CreateOfferingFromTemplateAsync(
         string sessionId,
         string ownerId,
@@ -867,6 +956,335 @@ public sealed class AgentCoreChatService(
             "Open Calendar",
             "/calendar");
     }
+
+    private static TimeZoneInfo ResolveTimeZone(string? timeZoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timeZoneId))
+        {
+            return TimeZoneInfo.Utc;
+        }
+
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+        }
+        catch
+        {
+            return TimeZoneInfo.Utc;
+        }
+    }
+
+    private static ReportPeriod ResolveReportPeriod(string periodKey, DateTimeOffset nowLocal)
+    {
+        var today = nowLocal.Date;
+        return periodKey.ToLowerInvariant() switch
+        {
+            "today" => new("Today", "today", today, today, false),
+            "yesterday" => new("Yesterday", "yesterday", today.AddDays(-1), today.AddDays(-1), true),
+            "this-week" => new("This Week", "this-week", StartOfWeek(today), StartOfWeek(today).AddDays(6), false),
+            "last-week" => new("Last Week", "last-week", StartOfWeek(today).AddDays(-7), StartOfWeek(today).AddDays(-1), true),
+            "this-month" => new("This Month", "this-month", new DateTime(today.Year, today.Month, 1), new DateTime(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)), false),
+            "last-month" => ResolveLastMonth(today),
+            "current-year" => new("Current Year", "current-year", new DateTime(today.Year, 1, 1), new DateTime(today.Year, 12, 31), false),
+            "last-year" => new("Last Year", "last-year", new DateTime(today.Year - 1, 1, 1), new DateTime(today.Year - 1, 12, 31), true),
+            _ => new("Today", "today", today, today, false)
+        };
+    }
+
+    private static ReportPeriod ResolveLastMonth(DateTime today)
+    {
+        var lastMonth = today.AddMonths(-1);
+        return new ReportPeriod(
+            "Last Month",
+            "last-month",
+            new DateTime(lastMonth.Year, lastMonth.Month, 1),
+            new DateTime(lastMonth.Year, lastMonth.Month, DateTime.DaysInMonth(lastMonth.Year, lastMonth.Month)),
+            true);
+    }
+
+    private static ReportPeriod ResolveComparisonPeriod(string periodKey, DateTimeOffset nowLocal)
+        => periodKey.ToLowerInvariant() switch
+        {
+            "today" => ResolveReportPeriod("yesterday", nowLocal),
+            "this-week" => ResolveReportPeriod("last-week", nowLocal),
+            "this-month" => ResolveReportPeriod("last-month", nowLocal),
+            "current-year" => ResolveReportPeriod("last-year", nowLocal),
+            "yesterday" => ResolveReportPeriod("today", nowLocal),
+            "last-week" => ResolveReportPeriod("this-week", nowLocal),
+            "last-month" => ResolveReportPeriod("this-month", nowLocal),
+            "last-year" => ResolveReportPeriod("current-year", nowLocal),
+            _ => ResolveReportPeriod("yesterday", nowLocal)
+        };
+
+    private static DateTime StartOfWeek(DateTime day)
+        => day.AddDays(-(int)day.DayOfWeek);
+
+    private static DateTime ToLocalDate(DateTime utc, TimeZoneInfo timeZone)
+        => TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), timeZone).Date;
+
+    private static PeriodMetrics BuildPeriodMetrics(
+        ReportPeriod period,
+        IReadOnlyCollection<Occurrence> occurrences,
+        IReadOnlyCollection<Booking> bookings,
+        SageGoalSettings? settings,
+        TimeZoneInfo timeZone)
+    {
+        var slotEntries = occurrences
+            .SelectMany(occurrence => occurrence.Slots.Select(slot => new
+            {
+                Occurrence = occurrence,
+                Slot = slot,
+                LocalDate = ToLocalDate(slot.StartUtc, timeZone)
+            }))
+            .Where(x => x.LocalDate >= period.StartDate && x.LocalDate <= period.EndDate)
+            .ToList();
+
+        var relevantBookings = bookings
+            .Where(booking =>
+            {
+                var localDate = ToLocalDate(booking.OccurrenceSlot!.StartUtc, timeZone);
+                return localDate >= period.StartDate && localDate <= period.EndDate;
+            })
+            .ToList();
+
+        var bookingCount = relevantBookings.Count;
+        var salesAmount = relevantBookings.Sum(x => x.Occurrence?.Offering?.Price ?? 0m);
+        var offeredSlots = slotEntries.Count;
+        var bookedSlots = relevantBookings.Select(x => x.OccurrenceSlotId).Distinct().Count();
+
+        var featureLines = (settings?.Features ?? new List<SageGoalFeature>())
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Id)
+            .Select(feature =>
+            {
+                var matches = relevantBookings.Where(x => MatchesFeature(x.Occurrence?.Offering, feature.Name)).ToList();
+                return new FeaturePeriodMetrics(
+                    feature.Name,
+                    feature.ExpectedMonthlyBookingCount,
+                    feature.ExpectedMonthlySalesAmount,
+                    feature.TargetSharePercent,
+                    matches.Count,
+                    matches.Sum(x => x.Occurrence?.Offering?.Price ?? 0m));
+            })
+            .ToList();
+
+        return new PeriodMetrics(
+            period,
+            offeredSlots,
+            bookedSlots,
+            bookingCount,
+            salesAmount,
+            TargetBookingsForPeriod(settings?.ExpectedMonthlyBookingCount ?? 0, period),
+            TargetSalesForPeriod(settings?.ExpectedMonthlySalesAmount ?? 0m, period),
+            featureLines);
+    }
+
+    private static bool MatchesFeature(Offering? offering, string featureName)
+    {
+        if (offering is null || string.IsNullOrWhiteSpace(featureName))
+        {
+            return false;
+        }
+
+        var candidate = $"{offering.Name} {offering.Description} {offering.Category?.Name}".ToLowerInvariant();
+        return candidate.Contains(featureName.Trim().ToLowerInvariant(), StringComparison.Ordinal);
+    }
+
+    private static int TargetBookingsForPeriod(int monthlyTarget, ReportPeriod period)
+    {
+        if (monthlyTarget <= 0)
+        {
+            return 0;
+        }
+
+        return period.Key switch
+        {
+            "today" or "yesterday" => DailyTarget(monthlyTarget, period.StartDate),
+            "this-week" or "last-week" => Enumerable.Range(0, (period.EndDate - period.StartDate).Days + 1)
+                .Sum(offset => DailyTarget(monthlyTarget, period.StartDate.AddDays(offset))),
+            "this-month" or "last-month" => monthlyTarget,
+            "current-year" or "last-year" => monthlyTarget * 12,
+            _ => monthlyTarget
+        };
+    }
+
+    private static decimal TargetSalesForPeriod(decimal monthlyTarget, ReportPeriod period)
+    {
+        if (monthlyTarget <= 0)
+        {
+            return 0;
+        }
+
+        return period.Key switch
+        {
+            "today" or "yesterday" => DailySalesTarget(monthlyTarget, period.StartDate),
+            "this-week" or "last-week" => Enumerable.Range(0, (period.EndDate - period.StartDate).Days + 1)
+                .Sum(offset => DailySalesTarget(monthlyTarget, period.StartDate.AddDays(offset))),
+            "this-month" or "last-month" => monthlyTarget,
+            "current-year" or "last-year" => monthlyTarget * 12,
+            _ => monthlyTarget
+        };
+    }
+
+    private static int DailyTarget(int monthlyTarget, DateTime day)
+    {
+        if (monthlyTarget <= 0)
+        {
+            return 0;
+        }
+
+        var daysInMonth = DateTime.DaysInMonth(day.Year, day.Month);
+        return (int)Math.Ceiling(monthlyTarget / (decimal)daysInMonth);
+    }
+
+    private static decimal DailySalesTarget(decimal monthlyTarget, DateTime day)
+    {
+        if (monthlyTarget <= 0)
+        {
+            return 0;
+        }
+
+        var daysInMonth = DateTime.DaysInMonth(day.Year, day.Month);
+        return Math.Round(monthlyTarget / daysInMonth, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static string BuildProgressReportPrompt(
+        string sourceMessage,
+        SageGoalSettings? settings,
+        PeriodMetrics requested,
+        PeriodMetrics comparison,
+        PeriodMetrics currentDay,
+        PeriodMetrics currentWeek,
+        PeriodMetrics currentMonth,
+        DateTimeOffset nowLocal,
+        TimeZoneInfo timeZone)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine(sourceMessage);
+        builder.AppendLine("<system>");
+        builder.AppendLine($"Current facility-local timestamp: {nowLocal:yyyy-MM-dd HH:mm:ss zzz}");
+        builder.AppendLine($"Facility time zone: {timeZone.Id}");
+        builder.AppendLine($"Requested period: {requested.Period.Label} ({requested.Period.StartDate:yyyy-MM-dd} to {requested.Period.EndDate:yyyy-MM-dd})");
+        builder.AppendLine($"Comparison period: {comparison.Period.Label} ({comparison.Period.StartDate:yyyy-MM-dd} to {comparison.Period.EndDate:yyyy-MM-dd})");
+        builder.AppendLine("Use the computed operational data below as the source of truth.");
+        builder.AppendLine("Return HTML only. Do not return Markdown. Do not return plain text outside HTML tags.");
+        builder.AppendLine("Use theme-aware inline styles and semantic elements like div, p, h3, h4, ul, li, strong, and small.");
+        builder.AppendLine($"Requested period offered slots: {requested.OfferedSlots}");
+        builder.AppendLine($"Requested period booked slots: {requested.BookedSlots}");
+        builder.AppendLine($"Requested period total bookings: {requested.BookingCount}");
+        builder.AppendLine($"Requested period sales: {requested.SalesAmount:0.##}");
+        builder.AppendLine($"Requested period target bookings: {requested.TargetBookingCount}");
+        builder.AppendLine($"Requested period target sales: {requested.TargetSalesAmount:0.##}");
+        builder.AppendLine($"Comparison period total bookings: {comparison.BookingCount}");
+        builder.AppendLine($"Comparison period sales: {comparison.SalesAmount:0.##}");
+        builder.AppendLine($"Current day bookings: {currentDay.BookingCount} against target {currentDay.TargetBookingCount}; sales {currentDay.SalesAmount:0.##} against target {currentDay.TargetSalesAmount:0.##}");
+        builder.AppendLine($"Current week bookings: {currentWeek.BookingCount} against target {currentWeek.TargetBookingCount}; sales {currentWeek.SalesAmount:0.##} against target {currentWeek.TargetSalesAmount:0.##}");
+        builder.AppendLine($"Current month bookings: {currentMonth.BookingCount} against target {currentMonth.TargetBookingCount}; sales {currentMonth.SalesAmount:0.##} against target {currentMonth.TargetSalesAmount:0.##}");
+
+        if (settings is not null)
+        {
+            builder.AppendLine($"Facility summary: {settings.FacilityBusinessSummary}");
+        }
+
+        if (requested.Features.Count > 0)
+        {
+            builder.AppendLine("Feature performance in requested period:");
+            foreach (var feature in requested.Features)
+            {
+                builder.AppendLine($"- {feature.Name}: actual bookings {feature.ActualBookingCount}, actual sales {feature.ActualSalesAmount:0.##}, monthly expected bookings {feature.ExpectedMonthlyBookingCount}, monthly expected sales {feature.ExpectedMonthlySalesAmount:0.##}, target share {feature.TargetSharePercent:0.##}%");
+            }
+        }
+
+        builder.AppendLine("Return a polished HTML fragment.");
+        builder.AppendLine("Structure the answer with:");
+        builder.AppendLine("1. a short headline summary of performance versus goal");
+        builder.AppendLine("2. a compact metric card or grid");
+        builder.AppendLine("3. explicit recommendations on what we should do next");
+        builder.AppendLine("4. an explicit section on what we should avoid doing");
+        builder.AppendLine("If the requested period is in the past, anchor the recommendations to what should be done now in the current day, current week, and current month based on those trends.");
+        builder.AppendLine("Keep the tone practical, operational, and decision-oriented.");
+        builder.AppendLine("</system>");
+        return builder.ToString();
+    }
+
+    private static string BuildFallbackProgressHtml(
+        PeriodMetrics requested,
+        PeriodMetrics comparison,
+        PeriodMetrics currentDay,
+        PeriodMetrics currentWeek,
+        PeriodMetrics currentMonth,
+        DateTimeOffset nowLocal)
+    {
+        var bookingDelta = requested.BookingCount - comparison.BookingCount;
+        var salesDelta = requested.SalesAmount - comparison.SalesAmount;
+        var pastNote = requested.Period.IsPastPeriod
+            ? $"<p style=\"margin:0.75rem 0 0;color:var(--sage-muted);\">Use these learnings to adjust today ({currentDay.BookingCount}/{currentDay.TargetBookingCount} bookings), this week ({currentWeek.BookingCount}/{currentWeek.TargetBookingCount}), and this month ({currentMonth.BookingCount}/{currentMonth.TargetBookingCount}).</p>"
+            : string.Empty;
+
+        return $"""
+<div style="display:grid;gap:0.9rem;">
+  <div style="padding:1rem;border:1px solid var(--sage-border);border-radius:1rem;background:var(--sage-surface-muted);">
+    <h3 style="margin:0 0 0.35rem;color:var(--sage-text);">{WebUtility.HtmlEncode(requested.Period.Label)} Progress Report</h3>
+    <p style="margin:0;color:var(--sage-muted);">Generated for {nowLocal:MMM dd, yyyy hh:mm tt}. This report compares actual performance against targets and the nearest comparison period.</p>
+    {pastNote}
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(10rem,1fr));gap:0.75rem;">
+    <div style="padding:0.9rem;border:1px solid var(--sage-border);border-radius:0.9rem;background:var(--sage-surface);"><div style="color:var(--sage-muted);font-size:0.78rem;text-transform:uppercase;">Bookings</div><div style="font-weight:700;font-size:1.35rem;">{requested.BookingCount} / {requested.TargetBookingCount}</div></div>
+    <div style="padding:0.9rem;border:1px solid var(--sage-border);border-radius:0.9rem;background:var(--sage-surface);"><div style="color:var(--sage-muted);font-size:0.78rem;text-transform:uppercase;">Sales</div><div style="font-weight:700;font-size:1.35rem;">{requested.SalesAmount:C} / {requested.TargetSalesAmount:C}</div></div>
+    <div style="padding:0.9rem;border:1px solid var(--sage-border);border-radius:0.9rem;background:var(--sage-surface);"><div style="color:var(--sage-muted);font-size:0.78rem;text-transform:uppercase;">Offered vs Booked Slots</div><div style="font-weight:700;font-size:1.35rem;">{requested.OfferedSlots} / {requested.BookedSlots}</div></div>
+    <div style="padding:0.9rem;border:1px solid var(--sage-border);border-radius:0.9rem;background:var(--sage-surface);"><div style="color:var(--sage-muted);font-size:0.78rem;text-transform:uppercase;">Trend vs {WebUtility.HtmlEncode(comparison.Period.Label)}</div><div style="font-weight:700;font-size:1.35rem;">{bookingDelta:+#;-#;0} bookings, {salesDelta:+$0.##;-$0.##;$0.##}</div></div>
+  </div>
+  <div style="padding:1rem;border:1px solid var(--sage-border);border-radius:1rem;background:var(--sage-surface);">
+    <h4 style="margin:0 0 0.5rem;">What We Should Do Next</h4>
+    <ul style="margin:0;padding-left:1.1rem;">
+      <li>Push offerings and showcase rows tied to the highest-performing features and time slots.</li>
+      <li>Prioritize near-term demand generation for the current week and month where bookings are behind target.</li>
+      <li>Review slot capacity and publish status for underperforming offerings before adding new low-demand inventory.</li>
+    </ul>
+  </div>
+  <div style="padding:1rem;border:1px solid var(--sage-border);border-radius:1rem;background:var(--sage-surface);">
+    <h4 style="margin:0 0 0.5rem;">What We Should Avoid</h4>
+    <ul style="margin:0;padding-left:1.1rem;">
+      <li>Do not spread attention evenly across weak and strong features if the goal gap is still open.</li>
+      <li>Do not add more low-conversion slots without evidence of demand.</li>
+      <li>Do not ignore current-day and current-week pacing when the selected report period is historical.</li>
+    </ul>
+  </div>
+</div>
+""";
+    }
+
+    private static List<AgentChatActionDto> BuildProgressReportActions(string activePeriodKey)
+    {
+        var periods = new (string Label, string Key)[]
+        {
+            ("Today", "today"),
+            ("This Week", "this-week"),
+            ("Yesterday", "yesterday"),
+            ("Last Week", "last-week"),
+            ("This Month", "this-month"),
+            ("Last Month", "last-month"),
+            ("Current Year", "current-year"),
+            ("Last Year", "last-year")
+        };
+
+        return periods
+            .Select(period => new AgentChatActionDto
+            {
+                ActionType = "progress_report",
+                EntityType = "goal_progress",
+                TemplateKey = period.Key,
+                Label = period.Label,
+                Description = $"Prepare a progress report for the selected period '{period.Label}'. Compare actual bookings and sales against the configured Sage goal settings, explain the trend, recommend what actions should be taken next to meet or improve goals, and include what we should avoid doing. If the period is in the past, focus the recommendations on today, the current week, and the current month.",
+                Style = string.Equals(period.Key, activePeriodKey, StringComparison.OrdinalIgnoreCase) ? "primary" : "outline-primary",
+                RequiresExecution = true
+            })
+            .Append(NavigateAction("/sage-goals", "Open Sage Goal Settings", "Review or adjust the goal settings that drive this report."))
+            .ToList();
+    }
+
+    private static string StripHtml(string html)
+        => Regex.Replace(html, "<.*?>", string.Empty).Trim();
 
     private async Task<AgentChatResponse> CreateShowcasePageFromTemplateAsync(
         string sessionId,
@@ -1115,4 +1533,24 @@ public sealed class AgentCoreChatService(
             .Select(value => ((DayOfWeek)value).ToString()[..3])
             .ToList();
     }
+
+    private sealed record ReportPeriod(string Label, string Key, DateTime StartDate, DateTime EndDate, bool IsPastPeriod);
+
+    private sealed record FeaturePeriodMetrics(
+        string Name,
+        int ExpectedMonthlyBookingCount,
+        decimal ExpectedMonthlySalesAmount,
+        decimal TargetSharePercent,
+        int ActualBookingCount,
+        decimal ActualSalesAmount);
+
+    private sealed record PeriodMetrics(
+        ReportPeriod Period,
+        int OfferedSlots,
+        int BookedSlots,
+        int BookingCount,
+        decimal SalesAmount,
+        int TargetBookingCount,
+        decimal TargetSalesAmount,
+        IReadOnlyCollection<FeaturePeriodMetrics> Features);
 }

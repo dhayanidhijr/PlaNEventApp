@@ -82,6 +82,17 @@
     margin-top: 0.85rem;
 }
 
+.agent-chat-starter {
+    display: flex;
+    min-height: 100%;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.starter-actions {
+    margin-top: 0;
+}
+
 .verification-overlay {
     z-index: 3600;
     justify-content: flex-start;
