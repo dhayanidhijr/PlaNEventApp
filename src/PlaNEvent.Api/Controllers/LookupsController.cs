@@ -119,7 +119,7 @@ public sealed class LookupsController(AppDbContext dbContext, IActivityService a
 
         staff.Name = request.Name.Trim();
         staff.Email = request.Email.Trim();
-        staff.TrainingQualityRating = request.TrainingQualityRating;
+        staff.TrainingQualityRating = Math.Clamp(decimal.Round(request.TrainingQualityRating, 0, MidpointRounding.AwayFromZero), 0m, 5m);
         staff.OfferingMappings.Clear();
 
         foreach (var mapping in request.OfferingMappings

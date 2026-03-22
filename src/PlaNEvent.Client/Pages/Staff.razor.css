@@ -90,6 +90,7 @@
 .staff-meta {
     align-items: center;
     margin-top: 0.75rem;
+    flex-wrap: wrap;
 }
 
 .staff-name-btn {
@@ -114,6 +115,13 @@
     color: var(--app-text);
     font-weight: 700;
     font-size: 0.82rem;
+    letter-spacing: 0.08em;
+}
+
+.staff-card-actions {
+    display: flex;
+    gap: 0.45rem;
+    flex-wrap: wrap;
 }
 
 .editor-grid {
@@ -128,6 +136,35 @@
     border-radius: 8px;
     padding: 1rem;
     background: var(--app-surface-alt);
+}
+
+.rating-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.star-picker {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.star-btn {
+    border: 1px solid var(--app-border);
+    background: var(--app-surface-alt);
+    color: var(--app-muted);
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 8px;
+    font-size: 1.35rem;
+    line-height: 1;
+}
+
+.star-btn.active {
+    color: #ffb84d;
+    border-color: color-mix(in srgb, #ffb84d 55%, var(--app-border));
+    background: color-mix(in srgb, #ffb84d 12%, var(--app-surface));
 }
 
 .mapping-list {

@@ -41,11 +41,15 @@
                                     <button class="staff-name-btn" @onclick="() => SelectStaff(person.Id)">@person.Name</button>
                                     <div class="staff-email">@person.Email</div>
                                 </div>
-                                <span class="rating-pill">@person.TrainingQualityRating.ToString("0.0")/5</span>
+                                <span class="rating-pill">@DisplayStars(person.TrainingQualityRating)</span>
                             </div>
                             <div class="staff-meta">
-                                <span>@person.OfferingMappings.Count offering(s)</span>
-                                <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenCalendar(person)">View Calendar</button>
+                                <span>@person.OfferingMappings.Count offering(s) assigned</span>
+                                <div class="staff-card-actions">
+                                    <button class="btn btn-sm btn-light" @onclick="() => SelectStaff(person.Id)">Edit</button>
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => SelectStaffAndFocusMappings(person.Id)">Assign Offerings</button>
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => OpenCalendar(person)">View Calendar</button>
+                                </div>
                             </div>
                         </div>
                     }
@@ -71,9 +75,20 @@
                         <label>Email</label>
                         <InputText class="form-control" @bind-Value="model.Email" />
                     </div>
-                    <div>
+                    <div class="rating-editor">
                         <label>Training Quality Rating</label>
-                        <InputNumber class="form-control" @bind-Value="model.TrainingQualityRating" />
+                        <div class="star-picker" role="radiogroup" aria-label="Training quality rating">
+                            @for (var star = 1; star <= 5; star++)
+                            {
+                                var active = model.TrainingQualityRating >= star;
+                                <button type="button"
+                                        class="star-btn @(active ? "active" : string.Empty)"
+                                        title="@($"{star} star{(star == 1 ? string.Empty : "s")}")"
+                                        aria-label="@($"{star} star{(star == 1 ? string.Empty : "s")}")"
+                                        @onclick="() => SetRating(star)">★</button>
+                            }
+                        </div>
+                        <div class="panel-muted">Selected: @DisplayStars(model.TrainingQualityRating)</div>
                     </div>
                 </div>
 
@@ -272,6 +287,11 @@
         status = null;
     }
 
+    private void SelectStaffAndFocusMappings(int id)
+    {
+        SelectStaff(id);
+    }
+
     private void AddMapping()
     {
         model.OfferingMappings.Add(new StaffOfferingMappingDto());
@@ -340,6 +360,11 @@
         await ReloadAsync();
     }
 
+    private void SetRating(int star)
+    {
+        model.TrainingQualityRating = Math.Clamp(star, 0, 5);
+    }
+
     private async Task OpenCalendar(StaffDto person)
     {
         calendarStaffId = person.Id;
@@ -406,6 +431,12 @@
                 })
                 .ToList()
         };
+
+    private static string DisplayStars(decimal rating)
+    {
+        var filled = (int)Math.Clamp(decimal.ToInt32(decimal.Round(rating, 0, MidpointRounding.AwayFromZero)), 0, 5);
+        return string.Concat(Enumerable.Repeat("★", filled)) + string.Concat(Enumerable.Repeat("☆", 5 - filled));
+    }
 
     private static DateTime ToUtcStart(DateTime localDate)
     {
