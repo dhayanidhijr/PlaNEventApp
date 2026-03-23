@@ -706,6 +706,7 @@ public sealed class AgentCoreChatService(
         CancellationToken cancellationToken)
     {
         var enrichedHtml = await EnrichShowcaseResponseHtmlAsync(htmlReply, cancellationToken);
+        enrichedHtml = await ValidateShowcaseCreationClaimsAsync(enrichedHtml, cancellationToken);
         var actions = await BuildSuggestedActionsAsync(request.Message, cancellationToken);
         var showcaseActions = await BuildShowcasePreviewActionsAsync(enrichedHtml, cancellationToken);
         foreach (var showcaseAction in showcaseActions)
@@ -1867,11 +1868,13 @@ public sealed class AgentCoreChatService(
             .Replace("/showcase/{ownerSlug}", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase)
             .Replace("/showcase/ownerSlug", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase);
 
+        enriched = enriched.Replace($"{normalizedBase}{normalizedBase}", normalizedBase, StringComparison.OrdinalIgnoreCase);
+
         enriched = Regex.Replace(
             enriched,
-            @"(?<!https?:)//?showcase/" + Regex.Escape(publicSlug) + @"(\?pageSlug=[^<\s""]+)?",
-            match => $"{normalizedBase}/showcase/{publicSlug}{match.Groups[1].Value}",
-            RegexOptions.IgnoreCase);
+            @"(^|[\s>""'(])(?<path>/showcase/" + Regex.Escape(publicSlug) + @"(\?pageSlug=[^<\s""]+)?)",
+            match => $"{match.Groups[1].Value}{normalizedBase}{match.Groups["path"].Value}",
+            RegexOptions.IgnoreCase | RegexOptions.Multiline);
 
         enriched = Regex.Replace(
             enriched,
@@ -1894,6 +1897,46 @@ public sealed class AgentCoreChatService(
         return enriched;
     }
 
+    private async Task<string> ValidateShowcaseCreationClaimsAsync(string htmlReply, CancellationToken cancellationToken)
+    {
+        var ownerId = CurrentUserId();
+        if (string.IsNullOrWhiteSpace(ownerId) || string.IsNullOrWhiteSpace(htmlReply))
+        {
+            return htmlReply;
+        }
+
+        var claimedSlugs = ExtractShowcaseSlugs(htmlReply);
+        if (claimedSlugs.Count == 0 || !LooksLikeShowcaseCreationClaim(htmlReply))
+        {
+            return htmlReply;
+        }
+
+        var persistedSlugs = await dbContext.ShowcasePages
+            .AsNoTracking()
+            .Where(x => x.OwnerId == ownerId && claimedSlugs.Contains(x.Slug))
+            .Select(x => x.Slug)
+            .ToListAsync(cancellationToken);
+
+        if (persistedSlugs.Count > 0)
+        {
+            return htmlReply;
+        }
+
+        var softenedHtml = htmlReply
+            .Replace("Showcase Page Creation Complete", "Showcase Page Draft Prepared", StringComparison.OrdinalIgnoreCase)
+            .Replace("Showcase Pages Created Successfully!", "Showcase Plan Prepared", StringComparison.OrdinalIgnoreCase)
+            .Replace("Showcase page created.", "Showcase draft prepared.", StringComparison.OrdinalIgnoreCase)
+            .Replace("has been created successfully", "has been drafted but not persisted", StringComparison.OrdinalIgnoreCase);
+
+        return
+            $"""
+<div style="margin-bottom:0.85rem;padding:0.9rem 1rem;border:1px solid #d97706;border-radius:0.9rem;background:color-mix(in srgb,#d97706 12%,var(--sage-surface));color:var(--sage-text);">
+  <strong>Persistence check:</strong> No showcase page record was actually saved for this response yet. Treat the content below as a draft recommendation, not a completed create.
+</div>
+{softenedHtml}
+""";
+    }
+
     private async Task<List<AgentChatActionDto>> BuildShowcasePreviewActionsAsync(string htmlReply, CancellationToken cancellationToken)
     {
         var ownerId = CurrentUserId();
@@ -1912,57 +1955,70 @@ public sealed class AgentCoreChatService(
             return new List<AgentChatActionDto>();
         }
 
-        var matches = Regex.Matches(
-            htmlReply,
-            Regex.Escape(optionsValue.ApiBaseUrl.TrimEnd('/')) + @"/showcase/" + Regex.Escape(publicSlug) + @"(\?pageSlug=[^<\s""]+)?",
-            RegexOptions.IgnoreCase);
-
-        var shorthandMatches = Regex.Matches(
-            htmlReply,
-            @"/showcase/\[(?:owner|your-slug)\]/(?<slugSquare>[a-z0-9\-]+)|/showcase/\{(?:owner|your-slug)\}/(?<slugBrace>[a-z0-9\-]+)|/showcase/(?:\[(?:ownerSlug)\]|\{(?:ownerSlug)\}|ownerSlug)\?pageSlug=(?<slugQuery>[a-z0-9\-]+)",
-            RegexOptions.IgnoreCase);
-
-        var actions = new List<AgentChatActionDto>();
-        foreach (Match match in matches.Cast<Match>().Take(3))
+        var candidateSlugs = ExtractShowcaseSlugs(htmlReply);
+        if (candidateSlugs.Count == 0)
         {
-            var url = match.Value;
-            var pageSlug = match.Groups[1].Success
-                ? Uri.UnescapeDataString(match.Groups[1].Value.Replace("?pageSlug=", string.Empty, StringComparison.OrdinalIgnoreCase))
-                : string.Empty;
-
-            var label = string.IsNullOrWhiteSpace(pageSlug)
-                ? "Preview Showcase"
-                : $"Preview {ToTitleLabel(pageSlug)}";
-
-            if (actions.All(x => !string.Equals(x.NavigateUrl, url, StringComparison.OrdinalIgnoreCase)))
-            {
-                actions.Add(NavigateAction(url, label, "Open the customer-facing showcase preview.", "outline-primary", true));
-            }
+            return new List<AgentChatActionDto>();
         }
 
-        foreach (Match match in shorthandMatches.Cast<Match>().Take(3))
-        {
-            var pageSlug = match.Groups["slugSquare"].Success
-                ? match.Groups["slugSquare"].Value
-                : match.Groups["slugBrace"].Success
-                    ? match.Groups["slugBrace"].Value
-                    : match.Groups["slugQuery"].Value;
-            if (string.IsNullOrWhiteSpace(pageSlug))
-            {
-                continue;
-            }
+        var persistedPages = await dbContext.ShowcasePages
+            .AsNoTracking()
+            .Where(x => x.OwnerId == ownerId && candidateSlugs.Contains(x.Slug) && x.IsActive)
+            .OrderBy(x => x.IsHomePage ? 0 : 1)
+            .ThenBy(x => x.Name)
+            .Select(x => new { x.Name, x.Slug, x.IsHomePage })
+            .Take(3)
+            .ToListAsync(cancellationToken);
 
-            var url = BuildPublicShowcaseUrl(publicSlug, pageSlug);
-            var label = $"Preview {ToTitleLabel(pageSlug)}";
-
-            if (actions.All(x => !string.Equals(x.NavigateUrl, url, StringComparison.OrdinalIgnoreCase)))
-            {
-                actions.Add(NavigateAction(url, label, "Open the customer-facing showcase preview.", "outline-primary", true));
-            }
-        }
-
-        return actions;
+        return persistedPages
+            .Select(page => NavigateAction(
+                BuildPublicShowcaseUrl(publicSlug, page.IsHomePage ? null : page.Slug),
+                page.IsHomePage ? "Preview Showcase" : $"Preview {page.Name}",
+                "Open the customer-facing showcase preview.",
+                "outline-primary",
+                true))
+            .ToList();
     }
+
+    private static HashSet<string> ExtractShowcaseSlugs(string htmlReply)
+    {
+        var slugs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Match match in Regex.Matches(htmlReply, @"Slug:\s*(?<slug>[a-z0-9\-]+)", RegexOptions.IgnoreCase))
+        {
+            var slug = match.Groups["slug"].Value.Trim();
+            if (!string.IsNullOrWhiteSpace(slug))
+            {
+                slugs.Add(slug);
+            }
+        }
+
+        foreach (Match match in Regex.Matches(htmlReply, @"[?&]pageSlug=(?<slug>[a-z0-9\-]+)", RegexOptions.IgnoreCase))
+        {
+            var slug = match.Groups["slug"].Value.Trim();
+            if (!string.IsNullOrWhiteSpace(slug))
+            {
+                slugs.Add(slug);
+            }
+        }
+
+        foreach (Match match in Regex.Matches(htmlReply, @"/showcase/(?:\[(?:owner|your-slug|ownerSlug)\]|\{(?:owner|your-slug|ownerSlug)\}|[a-z0-9\-]+)/(?<slug>[a-z0-9\-]+)", RegexOptions.IgnoreCase))
+        {
+            var slug = match.Groups["slug"].Value.Trim();
+            if (!string.IsNullOrWhiteSpace(slug))
+            {
+                slugs.Add(slug);
+            }
+        }
+
+        return slugs;
+    }
+
+    private static bool LooksLikeShowcaseCreationClaim(string htmlReply)
+        => htmlReply.Contains("showcase page creation complete", StringComparison.OrdinalIgnoreCase)
+            || htmlReply.Contains("showcase pages created successfully", StringComparison.OrdinalIgnoreCase)
+            || htmlReply.Contains("showcase page created", StringComparison.OrdinalIgnoreCase)
+            || htmlReply.Contains("public showcase url", StringComparison.OrdinalIgnoreCase);
 
     private string BuildPublicShowcaseUrl(string publicSlug, string? pageSlug = null)
     {
