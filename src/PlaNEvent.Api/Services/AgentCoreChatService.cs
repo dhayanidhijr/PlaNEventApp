@@ -388,6 +388,7 @@ public sealed class AgentCoreChatService(
 
         var sseBuffer = new StringBuilder();
         var replyBuffer = new StringBuilder();
+        var streamedAnyDelta = false;
 
         while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
         {
@@ -399,16 +400,32 @@ public sealed class AgentCoreChatService(
                     continue;
                 }
 
-                var completion = await ProcessRuntimeStreamPayloadAsync(
+                var streamedEvent = await ProcessRuntimeStreamPayloadAsync(
                     sseBuffer.ToString(),
                     actualSessionId,
                     replyBuffer,
                     downstreamResponse,
                     cancellationToken);
+                streamedAnyDelta |= streamedEvent.EmittedDelta;
                 sseBuffer.Clear();
-                if (completion is not null)
+                if (streamedEvent.Completion is not null)
                 {
-                    return (actualSessionId, completion);
+                    if (!streamedAnyDelta)
+                    {
+                        var syntheticHtml = new StringBuilder();
+                        foreach (var chunk in ChunkTextForStream(streamedEvent.Completion))
+                        {
+                            syntheticHtml.Append(chunk);
+                            await WriteSseEventAsync(downstreamResponse, "delta", new
+                            {
+                                sessionId = actualSessionId,
+                                delta = chunk,
+                                htmlReply = syntheticHtml.ToString()
+                            }, cancellationToken);
+                        }
+                    }
+
+                    return (actualSessionId, streamedEvent.Completion);
                 }
 
                 continue;
@@ -426,15 +443,31 @@ public sealed class AgentCoreChatService(
 
         if (sseBuffer.Length > 0)
         {
-            var completion = await ProcessRuntimeStreamPayloadAsync(
+            var streamedEvent = await ProcessRuntimeStreamPayloadAsync(
                 sseBuffer.ToString(),
                 actualSessionId,
                 replyBuffer,
                 downstreamResponse,
                 cancellationToken);
-            if (completion is not null)
+            streamedAnyDelta |= streamedEvent.EmittedDelta;
+            if (streamedEvent.Completion is not null)
             {
-                return (actualSessionId, completion);
+                if (!streamedAnyDelta)
+                {
+                    var syntheticHtml = new StringBuilder();
+                    foreach (var chunk in ChunkTextForStream(streamedEvent.Completion))
+                    {
+                        syntheticHtml.Append(chunk);
+                        await WriteSseEventAsync(downstreamResponse, "delta", new
+                        {
+                            sessionId = actualSessionId,
+                            delta = chunk,
+                            htmlReply = syntheticHtml.ToString()
+                        }, cancellationToken);
+                    }
+                }
+
+                return (actualSessionId, streamedEvent.Completion);
             }
         }
 
@@ -463,7 +496,7 @@ public sealed class AgentCoreChatService(
         return normalized;
     }
 
-    private static async Task<string?> ProcessRuntimeStreamPayloadAsync(
+    private static async Task<(string? Completion, bool EmittedDelta)> ProcessRuntimeStreamPayloadAsync(
         string payload,
         string sessionId,
         StringBuilder replyBuffer,
@@ -472,7 +505,7 @@ public sealed class AgentCoreChatService(
     {
         if (string.IsNullOrWhiteSpace(payload))
         {
-            return null;
+            return (null, false);
         }
 
         var streamedEvent = ParseRuntimeStreamEvent(payload, sessionId);
@@ -488,9 +521,10 @@ public sealed class AgentCoreChatService(
                         delta = streamedEvent.Delta,
                         htmlReply = replyBuffer.ToString()
                     }, cancellationToken);
+                    return (null, true);
                 }
 
-                return null;
+                return (null, false);
             case "complete":
                 if (!string.IsNullOrWhiteSpace(streamedEvent.Reply))
                 {
@@ -498,11 +532,11 @@ public sealed class AgentCoreChatService(
                     replyBuffer.Append(streamedEvent.Reply);
                 }
 
-                return replyBuffer.ToString().Trim();
+                return (replyBuffer.ToString().Trim(), false);
             case "error":
                 throw new InvalidOperationException(streamedEvent.Message ?? "Runtime stream failed.");
             default:
-                return null;
+                return (null, false);
         }
     }
 
