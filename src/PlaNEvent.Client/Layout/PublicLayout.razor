@@ -1,7 +1,72 @@
 @inherits LayoutComponentBase
+@inject PlaNEvent.Client.Services.DisplaySettingsService DisplaySettings
+@implements IDisposable
 
 <div class="app-scale-root">
     <div class="public-layout-shell">
-        @Body
+        <header class="public-display-bar">
+            <div class="public-display-brand">PlaNEvent Showcase</div>
+            <div class="public-display-controls">
+                <select class="form-select form-select-sm public-display-select" value="@DisplaySettings.Theme" @onchange="OnThemeChanged">
+                    <option value="default">Default</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                    <option value="grayscale-light">Grayscale Light</option>
+                    <option value="grayscale-dark">Grayscale Dark</option>
+                    <option value="colour">Colour</option>
+                </select>
+                <select class="form-select form-select-sm public-display-select" value="@DisplaySettings.ScalePercent" @onchange="OnScaleChanged">
+                    @foreach (var scaleOption in ScaleOptions)
+                    {
+                        <option value="@scaleOption">@($"{scaleOption}%")</option>
+                    }
+                </select>
+            </div>
+        </header>
+        <div class="public-layout-body">
+            @Body
+        </div>
     </div>
 </div>
+
+@code {
+    private static readonly int[] ScaleOptions = [75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180, 185, 190, 195, 200];
+
+    protected override void OnInitialized()
+    {
+        DisplaySettings.Changed += OnDisplaySettingsChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await DisplaySettings.EnsureInitializedAsync();
+    }
+
+    private async Task OnThemeChanged(ChangeEventArgs args)
+    {
+        await DisplaySettings.SetThemeAsync(args.Value?.ToString() ?? "default");
+    }
+
+    private async Task OnScaleChanged(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var scalePercent))
+        {
+            await DisplaySettings.SetScalePercentAsync(scalePercent);
+        }
+    }
+
+    private void OnDisplaySettingsChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        DisplaySettings.Changed -= OnDisplaySettingsChanged;
+    }
+}

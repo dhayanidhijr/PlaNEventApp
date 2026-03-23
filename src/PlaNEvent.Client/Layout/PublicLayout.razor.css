@@ -2,15 +2,75 @@
     width: 100%;
     min-height: calc(100vh / var(--app-scale-factor));
     height: calc(100vh / var(--app-scale-factor));
-    overflow: auto;
+    overflow: hidden;
     background:
         radial-gradient(circle at top left, rgba(255, 205, 130, 0.35), transparent 28%),
         radial-gradient(circle at top right, rgba(92, 144, 255, 0.24), transparent 24%),
         linear-gradient(180deg, #fffaf1 0%, #fff 22%, #f5f8ff 100%);
+    display: flex;
+    flex-direction: column;
 }
 
+:global(:root[data-theme="default"]) .public-layout-shell,
 :global(:root[data-theme="light"]) .public-layout-shell,
 :global(:root[data-theme="dark"]) .public-layout-shell,
-:global(:root[data-theme="grayscale"]) .public-layout-shell {
+:global(:root[data-theme="grayscale-light"]) .public-layout-shell,
+:global(:root[data-theme="grayscale-dark"]) .public-layout-shell,
+:global(:root[data-theme="colour"]) .public-layout-shell {
     background: var(--app-bg);
+}
+
+.public-display-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.9rem 1.25rem;
+    background: color-mix(in srgb, var(--app-surface) 92%, transparent);
+    border-bottom: 1px solid var(--app-border);
+    backdrop-filter: blur(10px);
+    flex-shrink: 0;
+}
+
+.public-display-brand {
+    color: var(--app-text-strong);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.public-display-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+}
+
+.public-display-select {
+    width: auto;
+    min-width: 9rem;
+    background: var(--app-surface);
+    color: var(--app-text);
+    border-color: var(--app-border);
+}
+
+.public-layout-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
+@media (max-width: 768px) {
+    .public-display-bar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .public-display-controls {
+        width: 100%;
+    }
+
+    .public-display-select {
+        min-width: 0;
+        flex: 1 1 10rem;
+    }
 }
