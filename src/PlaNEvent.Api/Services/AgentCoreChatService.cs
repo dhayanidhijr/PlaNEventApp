@@ -1997,7 +1997,7 @@ public sealed class AgentCoreChatService(
 
         if (actualRemainingCount == expectedRemainingCount.Value)
         {
-            return htmlReply;
+            return await ValidateShowcasePlacementClaimsAsync(ownerId, htmlReply, cancellationToken);
         }
 
         var softenedCleanupHtml = htmlReply
@@ -2011,6 +2011,124 @@ public sealed class AgentCoreChatService(
   <strong>Persistence check:</strong> Sage claimed {expectedRemainingCount.Value} remaining showcase pages, but the database currently has {actualRemainingCount} active pages. Treat the cleanup result below as unverified until the persisted page state matches.
 </div>
 {softenedCleanupHtml}
+""";
+    }
+
+    private async Task<string> ValidateShowcasePlacementClaimsAsync(string ownerId, string htmlReply, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(htmlReply)
+            || !Regex.IsMatch(StripHtml(htmlReply), @":\s*Added\s+", RegexOptions.IgnoreCase))
+        {
+            return htmlReply;
+        }
+
+        var placementRows = await dbContext.ShowcasePages
+            .AsNoTracking()
+            .Where(page => page.OwnerId == ownerId && page.IsActive)
+            .SelectMany(
+                page => page.Items.Where(item => item.IsActive),
+                (page, item) => new
+                {
+                    PageName = page.Name,
+                    item.SourceType,
+                    item.SourceId
+                })
+            .ToListAsync(cancellationToken);
+
+        if (placementRows.Count == 0)
+        {
+            return htmlReply;
+        }
+
+        var offeringIds = placementRows
+            .Where(x => string.Equals(x.SourceType, "offering", StringComparison.OrdinalIgnoreCase))
+            .Select(x => x.SourceId)
+            .Distinct()
+            .ToList();
+
+        var categoryIds = placementRows
+            .Where(x => string.Equals(x.SourceType, "category", StringComparison.OrdinalIgnoreCase))
+            .Select(x => x.SourceId)
+            .Distinct()
+            .ToList();
+
+        var offeringNames = await dbContext.Offerings
+            .AsNoTracking()
+            .Where(x => offeringIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.Name })
+            .ToListAsync(cancellationToken);
+
+        var categoryNames = await dbContext.Categories
+            .AsNoTracking()
+            .Where(x => categoryIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.Name })
+            .ToListAsync(cancellationToken);
+
+        var sourcePlacements = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in placementRows)
+        {
+            var sourceName = string.Equals(row.SourceType, "offering", StringComparison.OrdinalIgnoreCase)
+                ? offeringNames.FirstOrDefault(x => x.Id == row.SourceId)?.Name
+                : categoryNames.FirstOrDefault(x => x.Id == row.SourceId)?.Name;
+
+            var normalizedSourceName = NormalizeClaimName(sourceName);
+            if (string.IsNullOrWhiteSpace(normalizedSourceName))
+            {
+                continue;
+            }
+
+            if (!sourcePlacements.TryGetValue(normalizedSourceName, out var pages))
+            {
+                pages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                sourcePlacements[normalizedSourceName] = pages;
+            }
+
+            pages.Add(row.PageName);
+        }
+
+        var warnings = new List<string>();
+        foreach (var line in StripHtml(htmlReply)
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var match = Regex.Match(line, @"^(?<page>[^:]{2,80}):\s*Added\s+(?<items>.+)$", RegexOptions.IgnoreCase);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            var claimedPage = match.Groups["page"].Value.Trim();
+            var claimedItems = SplitClaimedItems(match.Groups["items"].Value);
+            foreach (var claimedItem in claimedItems)
+            {
+                var normalizedItem = NormalizeClaimName(claimedItem);
+                if (string.IsNullOrWhiteSpace(normalizedItem)
+                    || !sourcePlacements.TryGetValue(normalizedItem, out var actualPages)
+                    || actualPages.Contains(claimedPage))
+                {
+                    continue;
+                }
+
+                warnings.Add($"{claimedItem} is currently on {string.Join(", ", actualPages.OrderBy(x => x))}, not {claimedPage}.");
+            }
+        }
+
+        if (warnings.Count == 0)
+        {
+            return htmlReply;
+        }
+
+        var warningList = string.Join(string.Empty, warnings
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(warning => $"<li>{WebUtility.HtmlEncode(warning)}</li>"));
+
+        return
+            $"""
+<div style="margin-bottom:0.85rem;padding:0.9rem 1rem;border:1px solid #d97706;border-radius:0.9rem;background:color-mix(in srgb,#d97706 12%,var(--sage-surface));color:var(--sage-text);">
+  <strong>Placement check:</strong> One or more showcase placement claims in this response do not match the persisted showcase rows.
+  <ul style="margin:0.6rem 0 0 1rem;">{warningList}</ul>
+</div>
+{htmlReply}
 """;
     }
 
@@ -2146,6 +2264,23 @@ public sealed class AgentCoreChatService(
 
         match = Regex.Match(text, @"(?<count>\d+)\s+Strategic\s+Pages", RegexOptions.IgnoreCase);
         return match.Success && int.TryParse(match.Groups["count"].Value, out parsed) ? parsed : null;
+    }
+
+    private static IReadOnlyList<string> SplitClaimedItems(string value)
+        => Regex.Split(value, @"\s*(?:,| and )\s*", RegexOptions.IgnoreCase)
+            .Select(item => item.Trim().TrimEnd('.', '!', ';'))
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToList();
+
+    private static string NormalizeClaimName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = Regex.Replace(value.ToLowerInvariant(), @"[^a-z0-9]+", " ").Trim();
+        return Regex.Replace(normalized, @"\s+", " ");
     }
 
     private string BuildPublicShowcaseUrl(string publicSlug, string? pageSlug = null)
