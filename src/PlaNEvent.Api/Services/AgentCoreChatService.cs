@@ -343,6 +343,8 @@ public sealed class AgentCoreChatService(
             Before creating or updating offerings, rule groups, or timeslots that depend on relative dates like today, tomorrow, this week, next week, or this month, use the date/time tools first and anchor the schedule to the facility time zone.
             Never choose a past year or a fully past date range for a new offering unless the user explicitly asked for historical data.
             After creating or updating an offering, verify that upcoming occurrences exist before claiming success. If there are no upcoming occurrences, correct the schedule instead of presenting the action as complete.
+            When sending timeslot values to the offering APIs, use explicit time strings such as "09:00:00", "18:30:00", or "9:00 AM". Do not send natural language like "morning" or "evening".
+            Each new offering must include at least one rule group and at least one valid timeslot so occurrences can be generated immediately.
             After deleting, cleaning up, or consolidating showcase pages, verify the persisted active showcase page list before claiming the cleanup is complete.
             Before attempting to create or update a showcase page, resolve each feature to a real live offering or category record and use that record's numeric id.
             Showcase page items support SourceType values of "offering", "category", or "offeringCollection".
