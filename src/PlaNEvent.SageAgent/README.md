@@ -27,7 +27,7 @@ Suggested values:
 
 ```bash
 export AWS_REGION=us-east-1
-export SAGE_MODEL_ID=anthropic.claude-3-5-haiku-20241022-v1:0
+export SAGE_MODEL_ID=us.anthropic.claude-3-5-haiku-20241022-v1:0
 export PLANEVENT_API_BASE_URL=https://planevent.dawindemoproductsdemo.com
 export PLANEVENT_SWAGGER_URL=https://planevent.dawindemoproductsdemo.com/swagger/v1/swagger.json
 ```
