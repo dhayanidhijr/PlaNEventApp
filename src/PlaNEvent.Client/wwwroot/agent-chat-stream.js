@@ -79,6 +79,54 @@
                 window.addEventListener("mouseup", onUp);
             });
         },
+        initSplitResize: function (shellId, panelId, handleId, storageKey, defaultWidth, minWidth, maxWidth) {
+            const shell = document.getElementById(shellId);
+            const panel = document.getElementById(panelId);
+            const handle = document.getElementById(handleId);
+            if (!shell || !panel || !handle) {
+                return;
+            }
+
+            const clampWidth = function (value) {
+                return Math.min(maxWidth || 720, Math.max(minWidth || 340, value));
+            };
+
+            const applyWidth = function (widthPx) {
+                const safeWidth = clampWidth(widthPx);
+                panel.style.width = `${safeWidth}px`;
+                shell.style.setProperty("--calendar-sidebar-width", `${safeWidth}px`);
+                localStorage.setItem(storageKey || "planevent.calendar.sidebarWidth", safeWidth.toString());
+            };
+
+            if (!handle.dataset.splitResizeInitialized) {
+                const savedWidth = parseFloat(localStorage.getItem(storageKey || "planevent.calendar.sidebarWidth") || `${defaultWidth || 460}`);
+                applyWidth(Number.isFinite(savedWidth) ? savedWidth : (defaultWidth || 460));
+                handle.dataset.splitResizeInitialized = "true";
+            }
+
+            if (handle.dataset.splitResizeBound) {
+                return;
+            }
+
+            handle.dataset.splitResizeBound = "true";
+            handle.addEventListener("mousedown", function (event) {
+                event.preventDefault();
+
+                const onMove = function (moveEvent) {
+                    const shellRect = shell.getBoundingClientRect();
+                    const widthPx = moveEvent.clientX - shellRect.left;
+                    applyWidth(widthPx);
+                };
+
+                const onUp = function () {
+                    window.removeEventListener("mousemove", onMove);
+                    window.removeEventListener("mouseup", onUp);
+                };
+
+                window.addEventListener("mousemove", onMove);
+                window.addEventListener("mouseup", onUp);
+            });
+        },
         scrollToBottom: function (elementId) {
             const element = document.getElementById(elementId);
             if (!element) {

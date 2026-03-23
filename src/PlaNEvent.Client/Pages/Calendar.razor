@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @inject ApiClient ApiClient
 @inject NavigationManager NavigationManager
+@inject IJSRuntime Js
 
 <div class="calendar-page">
     <div class="module-header">
@@ -20,8 +21,8 @@
         <div class="alert alert-info">@status</div>
     }
 
-    <div class="calendar-shell">
-        <aside class="offerings-panel">
+    <div class="calendar-shell" id="calendar-shell">
+        <aside class="offerings-panel" id="calendar-offerings-panel">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h3 class="mb-0">Categories & Offerings</h3>
                 <button class="btn btn-sm btn-outline-secondary" @onclick="ReloadAsync">Refresh</button>
@@ -46,6 +47,7 @@
                 <button class="btn btn-outline-dark" @onclick="OpenShowcasePages">Manage Showcase Pages</button>
             </div>
         </aside>
+        <div class="calendar-resize-handle" id="calendar-resize-handle" aria-hidden="true"></div>
 
         <section class="calendar-board">
             <div class="calendar-toolbar">
@@ -180,6 +182,14 @@
     protected override async Task OnInitializedAsync()
     {
         await ReloadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Js.InvokeVoidAsync("planeventAgentChat.initSplitResize", "calendar-shell", "calendar-offerings-panel", "calendar-resize-handle", "planevent.calendar.sidebarWidth", 460, 340, 720);
+        }
     }
 
     private async Task ReloadAsync()
