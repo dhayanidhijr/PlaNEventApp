@@ -343,6 +343,7 @@ public sealed class AgentCoreChatService(
             Before creating or updating offerings, rule groups, or timeslots that depend on relative dates like today, tomorrow, this week, next week, or this month, use the date/time tools first and anchor the schedule to the facility time zone.
             Never choose a past year or a fully past date range for a new offering unless the user explicitly asked for historical data.
             After creating or updating an offering, verify that upcoming occurrences exist before claiming success. If there are no upcoming occurrences, correct the schedule instead of presenting the action as complete.
+            After deleting, cleaning up, or consolidating showcase pages, verify the persisted active showcase page list before claiming the cleanup is complete.
             Before attempting to create or update a showcase page, resolve each feature to a real live offering or category record and use that record's numeric id.
             Showcase page items support SourceType values of "offering", "category", or "offeringCollection".
             Showcase page items only support CarouselType values of "carousel" or "rail".
@@ -2014,10 +2015,67 @@ public sealed class AgentCoreChatService(
             return htmlReply;
         }
 
+        var activePageNames = await dbContext.ShowcasePages
+            .AsNoTracking()
+            .Where(x => x.OwnerId == ownerId && x.IsActive)
+            .OrderBy(x => x.Name)
+            .Select(x => x.Name)
+            .ToListAsync(cancellationToken);
+
+        var activePageNameSet = activePageNames
+            .Select(NormalizeClaimName)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var deletedClaims = ExtractCleanupSectionItems(htmlReply, "Removed Pages");
+        var retainedClaims = ExtractCleanupSectionItems(htmlReply, "Retained Strategic Pages");
+        var deletionMismatches = deletedClaims
+            .Where(name => activePageNameSet.Contains(NormalizeClaimName(name)))
+            .ToList();
+        var retainedMismatches = retainedClaims
+            .Where(name => !activePageNameSet.Contains(NormalizeClaimName(name)))
+            .ToList();
+
+        var claimsAllDeleted = htmlReply.Contains("deleted all existing showcase pages", StringComparison.OrdinalIgnoreCase)
+            || htmlReply.Contains("all previous showcase pages have been removed", StringComparison.OrdinalIgnoreCase);
+
+        if (deletionMismatches.Count > 0 || retainedMismatches.Count > 0 || (claimsAllDeleted && activePageNames.Count > 0))
+        {
+            var mismatchNotes = new List<string>();
+            if (claimsAllDeleted && activePageNames.Count > 0)
+            {
+                mismatchNotes.Add($"Sage claimed all showcase pages were removed, but {activePageNames.Count} active page(s) still exist.");
+            }
+
+            if (deletionMismatches.Count > 0)
+            {
+                mismatchNotes.Add($"These pages were claimed as deleted but are still active: {string.Join(", ", deletionMismatches)}.");
+            }
+
+            if (retainedMismatches.Count > 0)
+            {
+                mismatchNotes.Add($"These pages were claimed as retained but are not currently active: {string.Join(", ", retainedMismatches)}.");
+            }
+
+            var mismatchCleanupHtml = htmlReply
+                .Replace("Cleanup Status", "Cleanup Review", StringComparison.OrdinalIgnoreCase)
+                .Replace("Complete", "Needs verification", StringComparison.OrdinalIgnoreCase)
+                .Replace("Showcase page optimization is complete.", "Showcase cleanup plan was prepared, but the persisted page state does not match the claimed result yet.", StringComparison.OrdinalIgnoreCase)
+                .Replace("All previous showcase pages have been removed.", "The persisted showcase page state does not support the claimed delete result yet.", StringComparison.OrdinalIgnoreCase);
+
+            return
+                $"""
+<div style="margin-bottom:0.85rem;padding:0.9rem 1rem;border:1px solid #dc2626;border-radius:0.9rem;background:color-mix(in srgb,#dc2626 12%,var(--sage-surface));color:var(--sage-text);">
+  <strong>Persistence check:</strong> {WebUtility.HtmlEncode(string.Join(" ", mismatchNotes))}
+</div>
+{mismatchCleanupHtml}
+""";
+        }
+
         var expectedRemainingCount = ExtractExpectedRemainingShowcaseCount(htmlReply);
         if (!expectedRemainingCount.HasValue)
         {
-            return htmlReply;
+            return await ValidateShowcasePlacementClaimsAsync(ownerId, htmlReply, cancellationToken);
         }
 
         var actualRemainingCount = await dbContext.ShowcasePages
@@ -2334,6 +2392,31 @@ public sealed class AgentCoreChatService(
             .Select(item => item.Trim().TrimEnd('.', '!', ';'))
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .ToList();
+
+    private static IReadOnlyList<string> ExtractCleanupSectionItems(string htmlReply, string sectionTitle)
+    {
+        var text = StripHtml(htmlReply);
+        var match = Regex.Match(
+            text,
+            $"{Regex.Escape(sectionTitle)}\\s*(?<items>(?:[\\r\\n]+\\s*[•\\-]?\\s*.+)+)",
+            RegexOptions.IgnoreCase);
+
+        if (!match.Success)
+        {
+            return Array.Empty<string>();
+        }
+
+        return match.Groups["items"].Value
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line => line.Trim().TrimStart('•', '-', '*').Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .Select(line =>
+            {
+                var index = line.IndexOf(':');
+                return index > 0 ? line[..index].Trim() : line;
+            })
+            .ToList();
+    }
 
     private static string NormalizeClaimName(string? value)
     {
