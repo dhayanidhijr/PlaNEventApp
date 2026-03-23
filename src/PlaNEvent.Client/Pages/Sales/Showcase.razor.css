@@ -2,6 +2,7 @@
     max-width: 1380px;
     margin: 0 auto;
     padding: 1.8rem 1.2rem 3rem;
+    color: var(--app-text);
 }
 
 .showcase-hero {
@@ -18,14 +19,14 @@
 .booking-calendar-panel,
 .showcase-loading,
 .showcase-status {
-    border: 1px solid rgba(203, 216, 238, 0.9);
+    border: 1px solid var(--app-border);
     border-radius: 26px;
-    box-shadow: 0 24px 60px rgba(25, 48, 92, 0.08);
+    box-shadow: var(--app-shadow);
 }
 
 .showcase-hero-content {
     padding: 2rem;
-    background: linear-gradient(145deg, rgba(9, 22, 48, 0.95), rgba(32, 57, 120, 0.92));
+    background: linear-gradient(145deg, color-mix(in srgb, var(--app-sidebar-top) 92%, var(--app-surface) 8%), color-mix(in srgb, var(--app-accent-strong) 78%, var(--app-sidebar-bottom) 22%));
     color: #fff;
 }
 
@@ -73,14 +74,14 @@
 
 .showcase-search-panel {
     padding: 1.45rem;
-    background: rgba(255, 255, 255, 0.8);
+    background: color-mix(in srgb, var(--app-surface) 88%, transparent);
     backdrop-filter: blur(14px);
 }
 
 .showcase-search-label {
     display: block;
     margin-bottom: 0.5rem;
-    color: #29416b;
+    color: var(--app-text-strong);
     font-weight: 700;
 }
 
@@ -107,7 +108,7 @@
 
 .showcase-search-note {
     margin-top: 0.85rem;
-    color: #61789d;
+    color: var(--app-muted);
     font-size: 0.92rem;
 }
 
@@ -119,19 +120,19 @@
 }
 
 .showcase-tab {
-    border: 1px solid #d5dfef;
-    background: rgba(255, 255, 255, 0.86);
-    color: #2d436d;
+    border: 1px solid var(--app-border);
+    background: color-mix(in srgb, var(--app-surface) 92%, transparent);
+    color: var(--app-text);
     border-radius: 999px;
     padding: 0.7rem 1.1rem;
     font-weight: 700;
 }
 
 .showcase-tab.active {
-    background: linear-gradient(135deg, #182744, #335bb4);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--app-sidebar-top) 88%, var(--app-surface) 12%), color-mix(in srgb, var(--app-accent) 82%, var(--app-sidebar-bottom) 18%));
     border-color: transparent;
     color: #fff;
-    box-shadow: 0 12px 30px rgba(31, 59, 113, 0.18);
+    box-shadow: var(--app-shadow);
 }
 
 .showcase-row-section {
@@ -149,14 +150,14 @@
 .showcase-row-header h2,
 .booking-calendar-header h2 {
     margin: 0;
-    color: #15233f;
+    color: var(--app-text-strong);
     font-size: 1.5rem;
 }
 
 .showcase-row-header p,
 .booking-calendar-header p {
     margin: 0.2rem 0 0;
-    color: #6f84a7;
+    color: var(--app-muted);
 }
 
 .showcase-row-controls {
@@ -167,13 +168,13 @@
 .showcase-arrow {
     width: 44px;
     height: 44px;
-    border: 1px solid #d3def0;
+    border: 1px solid var(--app-border);
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.92);
-    color: #203763;
+    background: color-mix(in srgb, var(--app-surface) 94%, transparent);
+    color: var(--app-text);
     font-size: 1.3rem;
     line-height: 1;
-    box-shadow: 0 12px 30px rgba(19, 43, 84, 0.08);
+    box-shadow: var(--app-shadow);
 }
 
 .showcase-rail {
@@ -209,7 +210,7 @@
     border-radius: 28px;
     overflow: hidden;
     color: #fff;
-    box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+    box-shadow: var(--app-shadow);
 }
 
 .showcase-card-image,
@@ -287,14 +288,14 @@
 .booking-calendar-panel,
 .showcase-loading,
 .showcase-status {
-    background: rgba(255, 255, 255, 0.92);
+    background: color-mix(in srgb, var(--app-surface) 94%, transparent);
     padding: 1.35rem;
 }
 
 .booking-sidebar-title {
     font-size: 1.05rem;
     font-weight: 700;
-    color: #203662;
+    color: var(--app-text-strong);
     margin-bottom: 0.8rem;
 }
 
@@ -304,17 +305,17 @@
     align-items: start;
     gap: 0.8rem;
     margin-bottom: 0.7rem;
-    border: 1px solid #dbe4f3;
+    border: 1px solid var(--app-border);
     border-radius: 20px;
-    background: #fff;
+    background: var(--app-surface);
     padding: 0.9rem;
     text-align: left;
 }
 
 .booking-choice.active {
-    border-color: #315bb5;
-    background: linear-gradient(180deg, #edf4ff, #fff);
-    box-shadow: 0 14px 34px rgba(43, 78, 148, 0.12);
+    border-color: var(--app-accent);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--app-accent) 12%, var(--app-surface)), var(--app-surface));
+    box-shadow: var(--app-shadow);
 }
 
 .booking-choice-dot {
@@ -331,11 +332,11 @@
 }
 
 .booking-choice-copy strong {
-    color: #1d2c4a;
+    color: var(--app-text-strong);
 }
 
 .booking-choice-copy small {
-    color: #6780a4;
+    color: var(--app-muted);
     margin-top: 0.18rem;
 }
 
@@ -349,24 +350,24 @@
 
 .booking-view-switch {
     display: inline-flex;
-    border: 1px solid #d6dfee;
+    border: 1px solid var(--app-border);
     border-radius: 999px;
     padding: 0.2rem;
-    background: #f7f9fe;
+    background: var(--app-surface-alt);
 }
 
 .booking-view-switch button {
     border: 0;
     border-radius: 999px;
     background: transparent;
-    color: #577094;
+    color: var(--app-muted);
     padding: 0.45rem 0.95rem;
     text-transform: capitalize;
     font-weight: 700;
 }
 
 .booking-view-switch button.active {
-    background: #1e3663;
+    background: var(--app-accent-strong);
     color: #fff;
 }
 
@@ -376,10 +377,10 @@
 }
 
 .booking-card {
-    border: 1px solid #dbe4f3;
+    border: 1px solid var(--app-border);
     border-radius: 22px;
     padding: 1rem;
-    background: linear-gradient(180deg, #fff, #f8fbff);
+    background: linear-gradient(180deg, var(--app-surface), var(--app-surface-alt));
 }
 
 .booking-card-head {
@@ -391,20 +392,20 @@
 
 .booking-card-head h3 {
     margin: 0;
-    color: #1b2947;
+    color: var(--app-text-strong);
     font-size: 1.15rem;
 }
 
 .booking-card-head p {
     margin: 0.2rem 0 0;
-    color: #7087aa;
+    color: var(--app-muted);
 }
 
 .booking-price {
     display: inline-block;
     margin-top: 0.35rem;
     font-weight: 700;
-    color: #2f80ff;
+    color: var(--app-accent);
 }
 
 .booking-slot-list {
@@ -420,20 +421,20 @@
     gap: 1rem;
     padding: 0.9rem 1rem;
     border-radius: 18px;
-    background: #fff;
-    border: 1px solid #e3eaf6;
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
 }
 
 .booking-slot span {
     display: block;
-    color: #6a82a5;
+    color: var(--app-muted);
     margin-top: 0.2rem;
 }
 
 .booking-slot small {
     display: block;
     margin-top: 0.3rem;
-    color: #8398b8;
+    color: var(--app-muted);
 }
 
 .showcase-month-nav {
@@ -447,23 +448,23 @@
 .showcase-month-btn {
     width: 42px;
     height: 42px;
-    border: 1px solid #d3def0;
+    border: 1px solid var(--app-border);
     border-radius: 50%;
-    background: #fff;
-    color: #203763;
+    background: var(--app-surface);
+    color: var(--app-text);
     font-size: 1.2rem;
 }
 
 .showcase-month-label {
     font-weight: 700;
-    color: #203662;
+    color: var(--app-text-strong);
     letter-spacing: 0.02em;
 }
 
 .showcase-month-shell {
     overflow: hidden;
     border-radius: 20px;
-    border: 1px solid #dce6f3;
+    border: 1px solid var(--app-border);
 }
 
 .week-head,
@@ -473,8 +474,8 @@
 }
 
 .week-head {
-    background: #f4f7fc;
-    border-bottom: 1px solid #dce6f3;
+    background: var(--app-surface-alt);
+    border-bottom: 1px solid var(--app-border);
 }
 
 .week-head div {
@@ -482,25 +483,25 @@
     text-align: center;
     font-size: 0.82rem;
     font-weight: 700;
-    color: #6a82a5;
+    color: var(--app-muted);
 }
 
 .day-cell {
     min-height: 148px;
     padding: 0.65rem;
-    border-right: 1px solid #ecf1f8;
-    border-bottom: 1px solid #ecf1f8;
-    background: rgba(255, 255, 255, 0.95);
+    border-right: 1px solid var(--app-border);
+    border-bottom: 1px solid var(--app-border);
+    background: color-mix(in srgb, var(--app-surface) 96%, transparent);
 }
 
 .day-cell.muted {
-    background: #f8fbff;
+    background: var(--app-surface-alt);
 }
 
 .day-num {
     margin-bottom: 0.45rem;
     font-weight: 700;
-    color: #29416b;
+    color: var(--app-text);
 }
 
 .event-chip {
@@ -534,8 +535,8 @@
 }
 
 .event-chip-more {
-    background: #edf3ff;
-    color: #3c5789;
+    background: var(--app-surface-alt);
+    color: var(--app-text);
     box-shadow: none;
     font-size: 0.82rem;
 }
@@ -548,16 +549,16 @@
     align-items: center;
     justify-content: center;
     padding: 1.5rem;
-    background: rgba(9, 18, 36, 0.58);
+    background: var(--app-overlay);
     backdrop-filter: blur(6px);
 }
 
 .showcase-modal-card {
     width: min(920px, calc(100vw - 2rem));
     border-radius: 28px;
-    background: #fff;
-    color: #17233d;
-    box-shadow: 0 28px 80px rgba(7, 16, 31, 0.28);
+    background: var(--app-surface);
+    color: var(--app-text);
+    box-shadow: var(--app-shadow);
     padding: 1.4rem;
     position: relative;
 }
@@ -570,9 +571,9 @@
     position: absolute;
     top: 1rem;
     right: 1rem;
-    border: 1px solid #d8e1f0;
-    background: #fff;
-    color: #32486f;
+    border: 1px solid var(--app-border);
+    background: var(--app-surface);
+    color: var(--app-text);
     border-radius: 999px;
     padding: 0.45rem 0.85rem;
     font-weight: 700;
@@ -597,7 +598,7 @@
 }
 
 .showcase-modal-kicker {
-    color: #5f79a2;
+    color: var(--app-muted);
     font-size: 0.82rem;
     font-weight: 700;
     text-transform: uppercase;
@@ -612,17 +613,17 @@
 }
 
 .showcase-detail-grid div {
-    border: 1px solid #e2e9f5;
+    border: 1px solid var(--app-border);
     border-radius: 18px;
     padding: 0.95rem 1rem;
-    background: #f8fbff;
+    background: var(--app-surface-alt);
 }
 
 .showcase-detail-grid span {
     display: block;
     font-size: 0.76rem;
     font-weight: 700;
-    color: #6880a4;
+    color: var(--app-muted);
     letter-spacing: 0.06em;
     text-transform: uppercase;
 }
@@ -630,7 +631,7 @@
 .showcase-detail-grid strong {
     display: block;
     margin-top: 0.28rem;
-    color: #16233e;
+    color: var(--app-text-strong);
 }
 
 .showcase-modal-actions {
@@ -643,7 +644,7 @@
 
 .showcase-loading,
 .showcase-status {
-    color: #2d436d;
+    color: var(--app-text);
 }
 
 @media (max-width: 1100px) {
