@@ -283,6 +283,7 @@ public sealed class CalendarManagementController(
         var page = await dbContext.ShowcasePages
             .AsNoTracking()
             .Include(x => x.Items.OrderBy(i => i.SortOrder).ThenBy(i => i.Id))
+            .ThenInclude(x => x.OfferingReferences.OrderBy(r => r.SortOrder).ThenBy(r => r.Id))
             .FirstOrDefaultAsync(x => x.Id == id && x.OwnerId == ownerId, cancellationToken);
         if (page is null)
         {
@@ -339,13 +340,15 @@ public sealed class CalendarManagementController(
     [HttpPost("showcase-pages")]
     public async Task<ActionResult<ShowcasePageEditorDto>> SaveShowcasePage(SaveShowcasePageRequest request, CancellationToken cancellationToken)
     {
-        var validSourceTypes = new[] { "category", "offering" };
+        var validSourceTypes = new[] { "category", "offering", "offeringCollection" };
         var validCarouselTypes = new[] { "carousel", "rail" };
         var invalidItem = request.Items.FirstOrDefault(x =>
             string.IsNullOrWhiteSpace(x.SourceType) ||
             string.IsNullOrWhiteSpace(x.CarouselType) ||
             !validSourceTypes.Contains(x.SourceType, StringComparer.OrdinalIgnoreCase) ||
-            !validCarouselTypes.Contains(x.CarouselType, StringComparer.OrdinalIgnoreCase));
+            !validCarouselTypes.Contains(x.CarouselType, StringComparer.OrdinalIgnoreCase) ||
+            (string.Equals(x.SourceType, "offeringCollection", StringComparison.OrdinalIgnoreCase) && x.OfferingIds.Count == 0) ||
+            (!string.Equals(x.SourceType, "offeringCollection", StringComparison.OrdinalIgnoreCase) && x.SourceId <= 0));
 
         if (invalidItem is not null)
         {
@@ -358,6 +361,7 @@ public sealed class CalendarManagementController(
         {
             page = await dbContext.ShowcasePages
                 .Include(x => x.Items)
+                .ThenInclude(x => x.OfferingReferences)
                 .FirstOrDefaultAsync(x => x.Id == request.Id && x.OwnerId == ownerId, cancellationToken)
                 ?? throw new InvalidOperationException("Page not found.");
         }
@@ -389,6 +393,7 @@ public sealed class CalendarManagementController(
         var refreshed = await dbContext.ShowcasePages
             .AsNoTracking()
             .Include(x => x.Items.OrderBy(i => i.SortOrder).ThenBy(i => i.Id))
+            .ThenInclude(x => x.OfferingReferences.OrderBy(r => r.SortOrder).ThenBy(r => r.Id))
             .FirstAsync(x => x.Id == page.Id, cancellationToken);
 
         return Ok(MapPage(refreshed));
@@ -487,6 +492,7 @@ public sealed class CalendarManagementController(
             Name = x.Name,
             SourceType = x.SourceType,
             SourceId = x.SourceId,
+            OfferingIds = x.OfferingReferences.OrderBy(r => r.SortOrder).Select(r => r.OfferingId).ToList(),
             CarouselType = x.CarouselType,
             Description = x.Description,
             Blur = x.Blur,
@@ -590,7 +596,9 @@ public sealed class CalendarManagementController(
 
             item.Name = itemDto.Name.Trim();
             item.SourceType = itemDto.SourceType;
-            item.SourceId = itemDto.SourceId;
+            item.SourceId = string.Equals(itemDto.SourceType, "offeringCollection", StringComparison.OrdinalIgnoreCase)
+                ? 0
+                : itemDto.SourceId;
             item.CarouselType = itemDto.CarouselType;
             item.Description = itemDto.Description;
             item.Blur = itemDto.Blur;
@@ -598,6 +606,37 @@ public sealed class CalendarManagementController(
             item.ShowDescription = itemDto.ShowDescription;
             item.IsActive = itemDto.IsActive;
             item.SortOrder = itemDto.SortOrder;
+
+            var incomingOfferingIds = itemDto.OfferingIds
+                .Where(x => x > 0)
+                .Distinct()
+                .ToList();
+
+            foreach (var existingReference in item.OfferingReferences
+                         .Where(x => !incomingOfferingIds.Contains(x.OfferingId))
+                         .ToList())
+            {
+                item.OfferingReferences.Remove(existingReference);
+            }
+
+            if (string.Equals(itemDto.SourceType, "offeringCollection", StringComparison.OrdinalIgnoreCase))
+            {
+                for (var index = 0; index < incomingOfferingIds.Count; index++)
+                {
+                    var offeringId = incomingOfferingIds[index];
+                    var reference = item.OfferingReferences.FirstOrDefault(x => x.OfferingId == offeringId);
+                    if (reference is null)
+                    {
+                        reference = new ShowcasePageItemOffering
+                        {
+                            OfferingId = offeringId
+                        };
+                        item.OfferingReferences.Add(reference);
+                    }
+
+                    reference.SortOrder = index;
+                }
+            }
         }
     }
 

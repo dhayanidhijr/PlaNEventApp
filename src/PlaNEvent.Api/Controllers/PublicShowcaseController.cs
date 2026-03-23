@@ -32,6 +32,7 @@ public sealed class PublicShowcaseController(AppDbContext dbContext) : Controlle
         var pages = await dbContext.ShowcasePages
             .AsNoTracking()
             .Include(x => x.Items.OrderBy(i => i.SortOrder).ThenBy(i => i.Id))
+            .ThenInclude(x => x.OfferingReferences.OrderBy(r => r.SortOrder).ThenBy(r => r.Id))
             .Where(x => x.OwnerId == owner.Id && x.IsActive)
             .OrderByDescending(x => x.IsHomePage)
             .ThenBy(x => x.Name)
@@ -172,7 +173,9 @@ public sealed class PublicShowcaseController(AppDbContext dbContext) : Controlle
                 CarouselType = x.CarouselType,
                 Cards = x.SourceType == "category"
                     ? BuildCardsForCategory(x.SourceId, categories, offerings, term, x)
-                    : BuildCardsForOffering(x.SourceId, offerings, x, term)
+                    : x.SourceType == "offeringCollection"
+                        ? BuildCardsForOfferingCollection(x.OfferingReferences, offerings, x, term)
+                        : BuildCardsForOffering(x.SourceId, offerings, x, term)
             })
             .Where(x => x.Cards.Count > 0)
             .ToList();
@@ -236,6 +239,36 @@ public sealed class PublicShowcaseController(AppDbContext dbContext) : Controlle
     {
         return offerings
             .Where(x => x.Id == offeringId && MatchesSearch(x.Name, x.Description, searchTerm))
+            .Select(x => new PublicShowcaseCardDto
+            {
+                CardType = "offering",
+                SourceId = x.Id,
+                Title = x.Name,
+                Description = string.IsNullOrWhiteSpace(config.Description) ? x.Description : config.Description,
+                Price = x.Price,
+                ImageUrl = x.CoverImageUrl,
+                AccentColor = x.Color,
+                Blur = config.Blur,
+                HideTitle = config.HideTitle,
+                ShowDescription = config.ShowDescription
+            })
+            .ToList();
+    }
+
+    private static IReadOnlyCollection<PublicShowcaseCardDto> BuildCardsForOfferingCollection(
+        IReadOnlyCollection<ShowcasePageItemOffering> offeringReferences,
+        IReadOnlyCollection<Offering> offerings,
+        ShowcasePageItem config,
+        string searchTerm)
+    {
+        var offeringMap = offerings.ToDictionary(x => x.Id);
+
+        return offeringReferences
+            .OrderBy(x => x.SortOrder)
+            .Select(x => offeringMap.GetValueOrDefault(x.OfferingId))
+            .Where(x => x is not null)
+            .Select(x => x!)
+            .Where(x => MatchesSearch(x.Name, x.Description, searchTerm))
             .Select(x => new PublicShowcaseCardDto
             {
                 CardType = "offering",

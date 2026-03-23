@@ -337,15 +337,14 @@ public sealed class AgentCoreChatService(
             When discussing facility strategy, tie your recommendations back to these goals explicitly.
             Goal-setting features are planning signals only. They are not valid showcase API source types by themselves.
             Before attempting to create or update a showcase page, resolve each feature to a real live offering or category record and use that record's numeric id.
-            Showcase page items only support SourceType values of "offering" or "category".
+            Showcase page items support SourceType values of "offering", "category", or "offeringCollection".
             Showcase page items only support CarouselType values of "carousel" or "rail".
-            A showcase page item is one row/carousel source only. It cannot hold an arbitrary list of many different offering ids.
-            If the goal is a multi-offering carousel, you must use a category-backed row by selecting the appropriate real category as the source.
-            If the needed grouping category does not exist yet, create or reuse the appropriate category first, then publish that category into the showcase row.
-            Only use an offering-backed row when the intent is a single-offering spotlight, hero card, or one-item promotion.
-            Do not claim that one carousel contains many individually selected offerings unless they are all being surfaced through the same saved category source.
+            For a single-offering spotlight, use an offering-backed row with sourceType "offering" and one sourceId.
+            For a category-driven carousel, use sourceType "category" with one category sourceId.
+            For one carousel containing many hand-picked offerings, use sourceType "offeringCollection" and provide offeringIds with all required offering ids in the intended display order.
+            Do not split a requested multi-offering carousel into many single-offering rows unless the user explicitly asks for separate rows.
             When saving a showcase page, send the complete page payload with name, slug, isActive, isHomePage, and the full items array.
-            Each showcase item should include at least name, sourceType, sourceId, carouselType, and sortOrder.
+            Each showcase item should include at least name, sourceType, carouselType, and sortOrder. Include sourceId for single-source rows, and include offeringIds for hand-picked multi-offering rows.
             If an existing page is being updated, load that page first and then send the full updated item list rather than a partial patch.
             If there is no matching live offering or category for a requested feature, explain that the supply needs to exist first instead of claiming the showcase API itself is blocked.
             </system>
@@ -1525,9 +1524,9 @@ public sealed class AgentCoreChatService(
         builder.AppendLine("If an existing page or existing carousel row can be reused, say that explicitly and prefer updating it over creating a new page.");
         builder.AppendLine("Only recommend creating a brand-new showcase page when no existing page or row can reasonably carry the needed promotion.");
         builder.AppendLine("If supply is missing, say which offering should be created and then state which existing showcase page or row it should be published into.");
-        builder.AppendLine("If you recommend or create a multi-offering carousel, treat that as a category-backed row, not a set of separate single-offering rows.");
-        builder.AppendLine("If the right category does not exist, say that it should be created or reused first and then published as the carousel source.");
-        builder.AppendLine("Only describe a row as containing multiple offerings when those offerings are all surfaced through the same persisted category source.");
+        builder.AppendLine("If you recommend or create a multi-offering carousel, prefer one hand-picked offeringCollection row containing the intended offerings in order.");
+        builder.AppendLine("Use a category-backed row when the goal is to let the category dynamically surface its offerings, not when the user wants an explicit hand-picked set.");
+        builder.AppendLine("Do not describe many separate offering rows as one carousel.");
         builder.AppendLine("6. after the recommendations, include a plain-language approval ask such as 'If you approve, reply yes and I will create X now.'");
         builder.AppendLine("Do not tell the user to click buttons. Buttons are optional support only.");
         builder.AppendLine("Feature performance should always be called out explicitly for the selected period when feature goal settings exist.");
@@ -2030,18 +2029,24 @@ public sealed class AgentCoreChatService(
             return htmlReply;
         }
 
-        var placementRows = await dbContext.ShowcasePages
+        var placementPages = await dbContext.ShowcasePages
             .AsNoTracking()
+            .Include(page => page.Items.Where(item => item.IsActive))
+            .ThenInclude(item => item.OfferingReferences)
             .Where(page => page.OwnerId == ownerId && page.IsActive)
+            .ToListAsync(cancellationToken);
+
+        var placementRows = placementPages
             .SelectMany(
-                page => page.Items.Where(item => item.IsActive),
+                page => page.Items,
                 (page, item) => new
                 {
                     PageName = page.Name,
                     item.SourceType,
-                    item.SourceId
+                    item.SourceId,
+                    OfferingIds = item.OfferingReferences.Select(reference => reference.OfferingId).ToList()
                 })
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         if (placementRows.Count == 0)
         {
@@ -2049,8 +2054,12 @@ public sealed class AgentCoreChatService(
         }
 
         var offeringIds = placementRows
-            .Where(x => string.Equals(x.SourceType, "offering", StringComparison.OrdinalIgnoreCase))
-            .Select(x => x.SourceId)
+            .SelectMany(x => (IEnumerable<int>)(
+                string.Equals(x.SourceType, "offering", StringComparison.OrdinalIgnoreCase)
+                    ? new[] { x.SourceId }
+                    : string.Equals(x.SourceType, "offeringCollection", StringComparison.OrdinalIgnoreCase)
+                        ? x.OfferingIds
+                        : Array.Empty<int>()))
             .Distinct()
             .ToList();
 
@@ -2076,23 +2085,38 @@ public sealed class AgentCoreChatService(
 
         foreach (var row in placementRows)
         {
-            var sourceName = string.Equals(row.SourceType, "offering", StringComparison.OrdinalIgnoreCase)
-                ? offeringNames.FirstOrDefault(x => x.Id == row.SourceId)?.Name
-                : categoryNames.FirstOrDefault(x => x.Id == row.SourceId)?.Name;
+            var sourceNames = string.Equals(row.SourceType, "offeringCollection", StringComparison.OrdinalIgnoreCase)
+                ? row.OfferingIds
+                    .Select(id => offeringNames.FirstOrDefault(x => x.Id == id)?.Name)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Cast<string>()
+                    .ToList()
+                : new List<string?>
+                {
+                    string.Equals(row.SourceType, "offering", StringComparison.OrdinalIgnoreCase)
+                        ? offeringNames.FirstOrDefault(x => x.Id == row.SourceId)?.Name
+                        : categoryNames.FirstOrDefault(x => x.Id == row.SourceId)?.Name
+                }
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Cast<string>()
+                .ToList();
 
-            var normalizedSourceName = NormalizeClaimName(sourceName);
-            if (string.IsNullOrWhiteSpace(normalizedSourceName))
+            foreach (var sourceName in sourceNames)
             {
-                continue;
-            }
+                var normalizedSourceName = NormalizeClaimName(sourceName);
+                if (string.IsNullOrWhiteSpace(normalizedSourceName))
+                {
+                    continue;
+                }
 
-            if (!sourcePlacements.TryGetValue(normalizedSourceName, out var pages))
-            {
-                pages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                sourcePlacements[normalizedSourceName] = pages;
-            }
+                if (!sourcePlacements.TryGetValue(normalizedSourceName, out var pages))
+                {
+                    pages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    sourcePlacements[normalizedSourceName] = pages;
+                }
 
-            pages.Add(row.PageName);
+                pages.Add(row.PageName);
+            }
         }
 
         var warnings = new List<string>();

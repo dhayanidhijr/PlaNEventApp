@@ -13,6 +13,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
     public DbSet<OfferingTimeslot> OfferingTimeslots => Set<OfferingTimeslot>();
     public DbSet<ShowcasePage> ShowcasePages => Set<ShowcasePage>();
     public DbSet<ShowcasePageItem> ShowcasePageItems => Set<ShowcasePageItem>();
+    public DbSet<ShowcasePageItemOffering> ShowcasePageItemOfferings => Set<ShowcasePageItemOffering>();
     public DbSet<StaffMember> StaffMembers => Set<StaffMember>();
     public DbSet<StaffOfferingMapping> StaffOfferingMappings => Set<StaffOfferingMapping>();
     public DbSet<Occurrence> Occurrences => Set<Occurrence>();
@@ -64,6 +65,18 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : Ident
             .HasMany(x => x.Items)
             .WithOne(x => x.ShowcasePage)
             .HasForeignKey(x => x.ShowcasePageId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ShowcasePageItem>()
+            .HasMany(x => x.OfferingReferences)
+            .WithOne(x => x.ShowcasePageItem)
+            .HasForeignKey(x => x.ShowcasePageItemId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ShowcasePageItemOffering>()
+            .HasOne(x => x.Offering)
+            .WithMany()
+            .HasForeignKey(x => x.OfferingId)
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.Entity<StaffMember>()

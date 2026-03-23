@@ -81,6 +81,7 @@
                                     <option value="">Select source type</option>
                                     <option value="category">Category</option>
                                     <option value="offering">Offering</option>
+                                    <option value="offeringCollection">Hand-picked offerings</option>
                                 </select>
                             </div>
                             <div class="col-md-3">
@@ -91,15 +92,46 @@
                                     <option value="rail">Rail</option>
                                 </select>
                             </div>
-                            <div class="col-md-6">
-                                <label>Source</label>
-                                <select class="form-select" @bind="item.SourceId">
-                                    @foreach (var option in SourceOptions(item.SourceType))
-                                    {
-                                        <option value="@option.Id">@option.Name</option>
-                                    }
-                                </select>
-                            </div>
+                            @if (item.SourceType == "offeringCollection")
+                            {
+                                <div class="col-md-12">
+                                    <label>Offerings in this carousel</label>
+                                    <div class="border rounded p-3">
+                                        <div class="small text-muted mb-2">Select one or more offerings. They will appear in the saved order below.</div>
+                                        <div class="row g-2">
+                                            @foreach (var option in offerings)
+                                            {
+                                                <div class="col-md-6" @key="option.Id">
+                                                    <label class="d-flex align-items-center gap-2">
+                                                        <input type="checkbox"
+                                                               checked="@item.OfferingIds.Contains(option.Id)"
+                                                               @onchange="args => ToggleOfferingSelection(item, option.Id, args.Value as bool?)" />
+                                                        <span>@option.Name</span>
+                                                    </label>
+                                                </div>
+                                            }
+                                        </div>
+                                        @if (item.OfferingIds.Count > 0)
+                                        {
+                                            <div class="small mt-3">
+                                                <strong>Current order:</strong> @string.Join(", ", OrderedOfferingNames(item))
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="col-md-6">
+                                    <label>Source</label>
+                                    <select class="form-select" @bind="item.SourceId">
+                                        @foreach (var option in SourceOptions(item.SourceType))
+                                        {
+                                            <option value="@option.Id">@option.Name</option>
+                                        }
+                                    </select>
+                                </div>
+                            }
                             <div class="col-md-3">
                                 <label>Sort Order</label>
                                 <InputNumber class="form-control" @bind-Value="item.SortOrder" />
@@ -215,6 +247,12 @@
             return;
         }
 
+        if (editor.Items.Any(x => x.SourceType == "offeringCollection" && x.OfferingIds.Count == 0))
+        {
+            status = "Each hand-picked offering row must include at least one offering.";
+            return;
+        }
+
         var saved = await ApiClient.SaveShowcasePageAsync(new SaveShowcasePageRequest
         {
             Id = editor.Id == 0 ? null : editor.Id,
@@ -261,6 +299,27 @@
         => sourceType == "offering"
             ? offerings.Select(x => new SourceOption(x.Id, x.Name))
             : categories.Select(x => new SourceOption(x.Id, x.Name));
+
+    private void ToggleOfferingSelection(ShowcasePageItemDto item, int offeringId, bool? isChecked)
+    {
+        if (isChecked == true)
+        {
+            if (!item.OfferingIds.Contains(offeringId))
+            {
+                item.OfferingIds.Add(offeringId);
+            }
+
+            return;
+        }
+
+        item.OfferingIds.Remove(offeringId);
+    }
+
+    private IEnumerable<string> OrderedOfferingNames(ShowcasePageItemDto item)
+        => item.OfferingIds
+            .Select(id => offerings.FirstOrDefault(x => x.Id == id)?.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Cast<string>();
 
     private static ShowcasePageEditorDto NewEditor() => new()
     {

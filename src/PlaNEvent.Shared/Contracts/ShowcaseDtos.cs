@@ -36,6 +36,7 @@ public sealed class ShowcasePageItemDto
     public string Name { get; set; } = string.Empty;
     public string SourceType { get; set; } = "category";
     public int SourceId { get; set; }
+    public List<int> OfferingIds { get; set; } = new();
     public string CarouselType { get; set; } = "carousel";
     public string Description { get; set; } = string.Empty;
     public bool Blur { get; set; }
