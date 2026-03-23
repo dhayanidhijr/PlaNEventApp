@@ -345,6 +345,8 @@ public sealed class AgentCoreChatService(
             After creating or updating an offering, verify that upcoming occurrences exist before claiming success. If there are no upcoming occurrences, correct the schedule instead of presenting the action as complete.
             When sending timeslot values to the offering APIs, use explicit time strings such as "09:00:00", "18:30:00", or "9:00 AM". Do not send natural language like "morning" or "evening".
             Each new offering must include at least one rule group and at least one valid timeslot so occurrences can be generated immediately.
+            Never create or save an offering without a proper timeslot. If you do not yet have a valid start time and end time, stop and ask for clarification instead of saving the offering.
+            A proper timeslot means Start Time and End Time are both present, End Time is after Start Time, and any repeating slot includes both Repeat Every Minutes and Repeat Until Last Start Time.
             After deleting, cleaning up, or consolidating showcase pages, verify the persisted active showcase page list before claiming the cleanup is complete.
             Before attempting to create or update a showcase page, resolve each feature to a real live offering or category record and use that record's numeric id.
             Showcase page items support SourceType values of "offering", "category", or "offeringCollection".

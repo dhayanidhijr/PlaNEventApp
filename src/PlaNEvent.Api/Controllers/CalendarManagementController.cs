@@ -197,6 +197,12 @@ public sealed class CalendarManagementController(
     [HttpPost("offerings")]
     public async Task<ActionResult<OfferingEditorDto>> SaveOffering(SaveOfferingRequest request, CancellationToken cancellationToken)
     {
+        var validationError = ValidateOfferingRequest(request);
+        if (!string.IsNullOrWhiteSpace(validationError))
+        {
+            return BadRequest(validationError);
+        }
+
         var ownerId = CurrentUserId();
         Offering offering;
         if (request.Id.HasValue)
@@ -522,6 +528,50 @@ public sealed class CalendarManagementController(
             EndUtc = x.EndUtc
         }).OrderBy(x => x.StartUtc).ToList()
     };
+
+    private static string? ValidateOfferingRequest(SaveOfferingRequest request)
+    {
+        if (request.RuleGroups.Count == 0)
+        {
+            return "An offering must include at least one rule group.";
+        }
+
+        foreach (var ruleGroup in request.RuleGroups)
+        {
+            if (ruleGroup.Timeslots.Count == 0)
+            {
+                return $"Rule group '{ruleGroup.Name}' must include at least one timeslot.";
+            }
+
+            foreach (var timeslot in ruleGroup.Timeslots)
+            {
+                if (timeslot.IsAllDay)
+                {
+                    continue;
+                }
+
+                if (timeslot.EndTime <= timeslot.StartTime)
+                {
+                    return $"Rule group '{ruleGroup.Name}' contains a timeslot where End Time must be after Start Time.";
+                }
+
+                if (timeslot.RepeatGeneratedSlots)
+                {
+                    if (!timeslot.RepeatUntilLastStartTime.HasValue || !timeslot.RepeatEveryMinutes.HasValue || timeslot.RepeatEveryMinutes <= 0)
+                    {
+                        return $"Rule group '{ruleGroup.Name}' contains a repeating timeslot without a valid repeat interval and repeat-until time.";
+                    }
+
+                    if (timeslot.RepeatUntilLastStartTime.Value < timeslot.StartTime)
+                    {
+                        return $"Rule group '{ruleGroup.Name}' contains a repeating timeslot where Repeat Until must be at or after Start Time.";
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
 
     private static void SyncRuleGroups(Offering offering, IReadOnlyCollection<RuleGroupEditorDto> ruleGroups)
     {
