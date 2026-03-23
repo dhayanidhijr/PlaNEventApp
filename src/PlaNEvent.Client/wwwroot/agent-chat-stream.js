@@ -111,10 +111,12 @@
             handle.dataset.splitResizeBound = "true";
             handle.addEventListener("mousedown", function (event) {
                 event.preventDefault();
+                const startX = event.clientX;
+                const startWidth = panel.getBoundingClientRect().width;
 
                 const onMove = function (moveEvent) {
-                    const shellRect = shell.getBoundingClientRect();
-                    const widthPx = moveEvent.clientX - shellRect.left;
+                    const deltaX = moveEvent.clientX - startX;
+                    const widthPx = startWidth + deltaX;
                     applyWidth(widthPx);
                 };
 
