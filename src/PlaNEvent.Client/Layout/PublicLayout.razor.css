@@ -3,21 +3,9 @@
     min-height: calc(100vh / var(--app-scale-factor));
     height: calc(100vh / var(--app-scale-factor));
     overflow: hidden;
-    background:
-        radial-gradient(circle at top left, rgba(255, 205, 130, 0.35), transparent 28%),
-        radial-gradient(circle at top right, rgba(92, 144, 255, 0.24), transparent 24%),
-        linear-gradient(180deg, #fffaf1 0%, #fff 22%, #f5f8ff 100%);
+    background: var(--app-bg);
     display: flex;
     flex-direction: column;
-}
-
-:global(:root[data-theme="default"]) .public-layout-shell,
-:global(:root[data-theme="light"]) .public-layout-shell,
-:global(:root[data-theme="dark"]) .public-layout-shell,
-:global(:root[data-theme="grayscale-light"]) .public-layout-shell,
-:global(:root[data-theme="grayscale-dark"]) .public-layout-shell,
-:global(:root[data-theme="colour"]) .public-layout-shell {
-    background: var(--app-bg);
 }
 
 .public-display-bar {
@@ -57,6 +45,7 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
+    background: var(--app-bg);
 }
 
 @media (max-width: 768px) {

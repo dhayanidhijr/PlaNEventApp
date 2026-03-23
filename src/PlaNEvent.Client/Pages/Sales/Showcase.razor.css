@@ -1,8 +1,11 @@
 .showcase-page {
+    min-height: 100%;
     max-width: 1380px;
     margin: 0 auto;
     padding: 1.8rem 1.2rem 3rem;
+    background: transparent;
     color: var(--app-text);
+    box-sizing: border-box;
 }
 
 .showcase-hero {
