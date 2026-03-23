@@ -14,7 +14,7 @@ from planevent_sage_agent.openapi_tools import build_api_tools
 
 DEFAULT_API_BASE_URL = "https://planevent.dawindemoproductsdemo.com"
 DEFAULT_SWAGGER_URL = f"{DEFAULT_API_BASE_URL}/swagger/v1/swagger.json"
-DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+DEFAULT_MODEL_ID = "anthropic.claude-3-5-haiku-20241022-v1:0"
 SESSION_HISTORY: dict[str, list[dict[str, str]]] = {}
 MAX_HISTORY_ITEMS = 8
 
