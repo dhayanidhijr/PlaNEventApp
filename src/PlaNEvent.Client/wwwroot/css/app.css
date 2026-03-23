@@ -266,6 +266,14 @@ a, .btn-link {
     padding-top: 1.1rem;
 }
 
+.calendar-page {
+    height: 100%;
+    min-height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
 .valid.modified:not([type=checkbox]) {
     outline: 1px solid #26b050;
 }
@@ -349,6 +357,9 @@ code {
     align-items: center;
     gap: 0.32rem;
     min-height: 30px;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .tree-row.selected {
@@ -364,6 +375,7 @@ code {
     color: var(--app-muted);
     line-height: 1;
     padding: 0;
+    flex-shrink: 0;
 }
 
 .tree-label-btn {
@@ -373,6 +385,11 @@ code {
     padding: 0;
     text-align: left;
     font-size: 0.92rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .tree-menu-trigger {
@@ -382,6 +399,7 @@ code {
     color: var(--app-muted);
     width: 24px;
     height: 24px;
+    flex-shrink: 0;
 }
 
 .tree-context {
@@ -594,8 +612,13 @@ code {
 
 .calendar-shell {
     display: grid;
-    grid-template-columns: 390px 1fr;
-    gap: 0.9rem;
+    grid-template-columns: minmax(340px, var(--calendar-sidebar-width, 460px)) 0.75rem minmax(0, 1fr);
+    gap: 0;
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    align-items: stretch;
+    overflow: hidden;
 }
 
 .offerings-panel,
@@ -604,6 +627,15 @@ code {
     border: 1px solid var(--app-border);
     border-radius: 6px;
     padding: 0.95rem;
+    color: var(--app-text);
+    min-height: 0;
+    height: 100%;
+}
+
+.offerings-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .offerings-panel h3 {
@@ -616,15 +648,19 @@ code {
     margin-bottom: 0.8rem;
     background: var(--app-surface-alt);
     border: 1px solid var(--app-border);
+    color: var(--app-text);
 }
 
 .tree-list {
-    max-height: 455px;
-    overflow: auto;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
     border: 1px solid var(--app-border);
     border-radius: 6px;
     padding: 0.5rem;
     margin-bottom: 0.95rem;
+    background: var(--app-surface-muted);
 }
 
 .tree-dot {
@@ -658,6 +694,31 @@ code {
     margin-left: 0.45rem;
     font-weight: 700;
     color: var(--app-text);
+}
+
+.calendar-board {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.calendar-resize-handle {
+    position: relative;
+    cursor: col-resize;
+    min-height: 0;
+    background: transparent;
+}
+
+.calendar-resize-handle::before {
+    content: "";
+    position: absolute;
+    top: 0.75rem;
+    bottom: 0.75rem;
+    left: 50%;
+    width: 2px;
+    transform: translateX(-50%);
+    background: color-mix(in srgb, var(--app-border-strong) 80%, transparent);
+    border-radius: 999px;
 }
 
 .view-switch {
@@ -753,6 +814,15 @@ code {
 @media (max-width: 1200px) {
     .calendar-shell {
         grid-template-columns: 1fr;
+        gap: 0.9rem;
+    }
+
+    .calendar-page {
+        height: auto;
+    }
+
+    .calendar-resize-handle {
+        display: none;
     }
 }
 /* Agent chat overlay */

@@ -70,7 +70,8 @@
 .tree-list {
     flex: 1;
     min-height: 0;
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
     border: 1px solid var(--app-border);
     border-radius: 6px;
     padding: 0.5rem;
@@ -108,6 +109,9 @@
     align-items: center;
     gap: 0.32rem;
     min-height: 30px;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .tree-row.selected {
@@ -123,12 +127,14 @@
     color: var(--app-muted);
     line-height: 1;
     padding: 0;
+    flex-shrink: 0;
 }
 
 .tree-dot {
     width: 9px;
     height: 9px;
     border-radius: 99px;
+    flex-shrink: 0;
 }
 
 .tree-label-btn {
@@ -138,6 +144,11 @@
     padding: 0;
     text-align: left;
     font-size: 0.92rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .tree-menu-trigger {
@@ -147,6 +158,7 @@
     color: var(--app-muted);
     width: 24px;
     height: 24px;
+    flex-shrink: 0;
 }
 
 .tree-context {
