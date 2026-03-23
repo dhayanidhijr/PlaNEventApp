@@ -1828,7 +1828,10 @@ public sealed class AgentCoreChatService(
             .Replace("/showcase/your-slug", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase)
             .Replace("/showcase/[owner]", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase)
             .Replace("/showcase/{owner}", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase)
-            .Replace("/showcase/owner", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase);
+            .Replace("/showcase/owner", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase)
+            .Replace("/showcase/[ownerSlug]", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase)
+            .Replace("/showcase/{ownerSlug}", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase)
+            .Replace("/showcase/ownerSlug", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase);
 
         enriched = Regex.Replace(
             enriched,
@@ -1845,6 +1848,12 @@ public sealed class AgentCoreChatService(
         enriched = Regex.Replace(
             enriched,
             @"(?:https?://[^\s<""]+)?/showcase/\{(?:owner|your-slug)\}/(?<slug>[a-z0-9\-]+)",
+            match => BuildPublicShowcaseUrl(publicSlug, match.Groups["slug"].Value),
+            RegexOptions.IgnoreCase);
+
+        enriched = Regex.Replace(
+            enriched,
+            @"(?:https?://[^\s<""]+)?/showcase/(?:\[(?:ownerSlug)\]|\{(?:ownerSlug)\}|ownerSlug)\?pageSlug=(?<slug>[a-z0-9\-]+)",
             match => BuildPublicShowcaseUrl(publicSlug, match.Groups["slug"].Value),
             RegexOptions.IgnoreCase);
 
@@ -1876,7 +1885,7 @@ public sealed class AgentCoreChatService(
 
         var shorthandMatches = Regex.Matches(
             htmlReply,
-            @"/showcase/\[(?:owner|your-slug)\]/(?<slugSquare>[a-z0-9\-]+)|/showcase/\{(?:owner|your-slug)\}/(?<slugBrace>[a-z0-9\-]+)",
+            @"/showcase/\[(?:owner|your-slug)\]/(?<slugSquare>[a-z0-9\-]+)|/showcase/\{(?:owner|your-slug)\}/(?<slugBrace>[a-z0-9\-]+)|/showcase/(?:\[(?:ownerSlug)\]|\{(?:ownerSlug)\}|ownerSlug)\?pageSlug=(?<slugQuery>[a-z0-9\-]+)",
             RegexOptions.IgnoreCase);
 
         var actions = new List<AgentChatActionDto>();
@@ -1899,7 +1908,11 @@ public sealed class AgentCoreChatService(
 
         foreach (Match match in shorthandMatches.Cast<Match>().Take(3))
         {
-            var pageSlug = match.Groups["slugSquare"].Success ? match.Groups["slugSquare"].Value : match.Groups["slugBrace"].Value;
+            var pageSlug = match.Groups["slugSquare"].Success
+                ? match.Groups["slugSquare"].Value
+                : match.Groups["slugBrace"].Success
+                    ? match.Groups["slugBrace"].Value
+                    : match.Groups["slugQuery"].Value;
             if (string.IsNullOrWhiteSpace(pageSlug))
             {
                 continue;
