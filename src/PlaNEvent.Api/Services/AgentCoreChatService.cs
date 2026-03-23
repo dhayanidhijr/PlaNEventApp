@@ -2102,9 +2102,18 @@ public sealed class AgentCoreChatService(
             foreach (var claimedItem in claimedItems)
             {
                 var normalizedItem = NormalizeClaimName(claimedItem);
-                if (string.IsNullOrWhiteSpace(normalizedItem)
-                    || !sourcePlacements.TryGetValue(normalizedItem, out var actualPages)
-                    || actualPages.Contains(claimedPage))
+                if (string.IsNullOrWhiteSpace(normalizedItem))
+                {
+                    continue;
+                }
+
+                if (!sourcePlacements.TryGetValue(normalizedItem, out var actualPages))
+                {
+                    warnings.Add($"{claimedItem} was described as added to {claimedPage}, but there is no active persisted showcase row for that offering or category.");
+                    continue;
+                }
+
+                if (actualPages.Contains(claimedPage))
                 {
                     continue;
                 }
