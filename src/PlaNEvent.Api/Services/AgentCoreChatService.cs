@@ -339,6 +339,11 @@ public sealed class AgentCoreChatService(
             Before attempting to create or update a showcase page, resolve each feature to a real live offering or category record and use that record's numeric id.
             Showcase page items only support SourceType values of "offering" or "category".
             Showcase page items only support CarouselType values of "carousel" or "rail".
+            A showcase page item is one row/carousel source only. It cannot hold an arbitrary list of many different offering ids.
+            If the goal is a multi-offering carousel, you must use a category-backed row by selecting the appropriate real category as the source.
+            If the needed grouping category does not exist yet, create or reuse the appropriate category first, then publish that category into the showcase row.
+            Only use an offering-backed row when the intent is a single-offering spotlight, hero card, or one-item promotion.
+            Do not claim that one carousel contains many individually selected offerings unless they are all being surfaced through the same saved category source.
             When saving a showcase page, send the complete page payload with name, slug, isActive, isHomePage, and the full items array.
             Each showcase item should include at least name, sourceType, sourceId, carouselType, and sortOrder.
             If an existing page is being updated, load that page first and then send the full updated item list rather than a partial patch.
@@ -1520,6 +1525,9 @@ public sealed class AgentCoreChatService(
         builder.AppendLine("If an existing page or existing carousel row can be reused, say that explicitly and prefer updating it over creating a new page.");
         builder.AppendLine("Only recommend creating a brand-new showcase page when no existing page or row can reasonably carry the needed promotion.");
         builder.AppendLine("If supply is missing, say which offering should be created and then state which existing showcase page or row it should be published into.");
+        builder.AppendLine("If you recommend or create a multi-offering carousel, treat that as a category-backed row, not a set of separate single-offering rows.");
+        builder.AppendLine("If the right category does not exist, say that it should be created or reused first and then published as the carousel source.");
+        builder.AppendLine("Only describe a row as containing multiple offerings when those offerings are all surfaced through the same persisted category source.");
         builder.AppendLine("6. after the recommendations, include a plain-language approval ask such as 'If you approve, reply yes and I will create X now.'");
         builder.AppendLine("Do not tell the user to click buttons. Buttons are optional support only.");
         builder.AppendLine("Feature performance should always be called out explicitly for the selected period when feature goal settings exist.");
