@@ -292,6 +292,50 @@ public sealed class CalendarManagementController(
         return Ok(MapPage(page));
     }
 
+    [HttpGet("showcase-pages/resolve-url")]
+    public async Task<ActionResult<ShowcasePageUrlDto>> ResolveShowcasePageUrl([FromQuery] string pageSlug, CancellationToken cancellationToken)
+    {
+        var ownerId = CurrentUserId();
+        if (string.IsNullOrWhiteSpace(pageSlug))
+        {
+            return BadRequest("pageSlug is required.");
+        }
+
+        var page = await dbContext.ShowcasePages
+            .AsNoTracking()
+            .Where(x => x.OwnerId == ownerId && x.Slug == pageSlug.Trim())
+            .Select(x => new { x.Id, x.Name, x.Slug })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (page is null)
+        {
+            return NotFound();
+        }
+
+        var ownerSlug = await dbContext.Users
+            .AsNoTracking()
+            .Where(x => x.Id == ownerId)
+            .Select(x => x.PublicSlug)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(ownerSlug))
+        {
+            return NotFound("Owner public slug is not configured.");
+        }
+
+        var baseUrl = $"{Request.Scheme}://{Request.Host}".TrimEnd('/');
+        var publicUrl = $"{baseUrl}/showcase/{ownerSlug}?pageSlug={Uri.EscapeDataString(page.Slug)}";
+
+        return Ok(new ShowcasePageUrlDto
+        {
+            PageId = page.Id,
+            PageName = page.Name,
+            PageSlug = page.Slug,
+            OwnerSlug = ownerSlug,
+            PublicUrl = publicUrl
+        });
+    }
+
     [HttpPost("showcase-pages")]
     public async Task<ActionResult<ShowcasePageEditorDto>> SaveShowcasePage(SaveShowcasePageRequest request, CancellationToken cancellationToken)
     {

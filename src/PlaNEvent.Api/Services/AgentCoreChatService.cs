@@ -1686,7 +1686,7 @@ public sealed class AgentCoreChatService(
             Actions =
             {
                 VerifyAction("Verify Created Page", verification),
-                NavigateAction(publicPreviewUrl, "Preview Showcase", "Open the customer-facing version of the new showcase page.", "outline-primary"),
+                NavigateAction(publicPreviewUrl, "Preview Showcase", "Open the customer-facing version of the new showcase page.", "outline-primary", true),
                 NavigateAction($"/showcase-pages?id={page.Id}", "Open Showcase Pages", "Jump into the showcase admin module for this page.")
             }
         };
@@ -1743,7 +1743,7 @@ public sealed class AgentCoreChatService(
         };
     }
 
-    private static AgentChatActionDto NavigateAction(string navigateUrl, string label, string description, string style = "secondary")
+    private static AgentChatActionDto NavigateAction(string navigateUrl, string label, string description, string style = "secondary", bool openInNewTab = false)
     {
         return new AgentChatActionDto
         {
@@ -1751,7 +1751,8 @@ public sealed class AgentCoreChatService(
             Label = label,
             Description = description,
             Style = style,
-            NavigateUrl = navigateUrl
+            NavigateUrl = navigateUrl,
+            OpenInNewTab = openInNewTab
         };
     }
 
@@ -1824,12 +1825,27 @@ public sealed class AgentCoreChatService(
         var enriched = htmlReply
             .Replace("/showcase/[your-slug]", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase)
             .Replace("/showcase/{your-slug}", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase)
-            .Replace("/showcase/your-slug", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase);
+            .Replace("/showcase/your-slug", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase)
+            .Replace("/showcase/[owner]", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase)
+            .Replace("/showcase/{owner}", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase)
+            .Replace("/showcase/owner", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase);
 
         enriched = Regex.Replace(
             enriched,
             @"(?<!https?:)//?showcase/" + Regex.Escape(publicSlug) + @"(\?pageSlug=[^<\s""]+)?",
             match => $"{normalizedBase}/showcase/{publicSlug}{match.Groups[1].Value}",
+            RegexOptions.IgnoreCase);
+
+        enriched = Regex.Replace(
+            enriched,
+            @"(?:https?://[^\s<""]+)?/showcase/\[(?:owner|your-slug)\]/(?<slug>[a-z0-9\-]+)",
+            match => BuildPublicShowcaseUrl(publicSlug, match.Groups["slug"].Value),
+            RegexOptions.IgnoreCase);
+
+        enriched = Regex.Replace(
+            enriched,
+            @"(?:https?://[^\s<""]+)?/showcase/\{(?:owner|your-slug)\}/(?<slug>[a-z0-9\-]+)",
+            match => BuildPublicShowcaseUrl(publicSlug, match.Groups["slug"].Value),
             RegexOptions.IgnoreCase);
 
         return enriched;
@@ -1858,6 +1874,11 @@ public sealed class AgentCoreChatService(
             Regex.Escape(optionsValue.ApiBaseUrl.TrimEnd('/')) + @"/showcase/" + Regex.Escape(publicSlug) + @"(\?pageSlug=[^<\s""]+)?",
             RegexOptions.IgnoreCase);
 
+        var shorthandMatches = Regex.Matches(
+            htmlReply,
+            @"/showcase/\[(?:owner|your-slug)\]/(?<slugSquare>[a-z0-9\-]+)|/showcase/\{(?:owner|your-slug)\}/(?<slugBrace>[a-z0-9\-]+)",
+            RegexOptions.IgnoreCase);
+
         var actions = new List<AgentChatActionDto>();
         foreach (Match match in matches.Cast<Match>().Take(3))
         {
@@ -1872,7 +1893,24 @@ public sealed class AgentCoreChatService(
 
             if (actions.All(x => !string.Equals(x.NavigateUrl, url, StringComparison.OrdinalIgnoreCase)))
             {
-                actions.Add(NavigateAction(url, label, "Open the customer-facing showcase preview.", "outline-primary"));
+                actions.Add(NavigateAction(url, label, "Open the customer-facing showcase preview.", "outline-primary", true));
+            }
+        }
+
+        foreach (Match match in shorthandMatches.Cast<Match>().Take(3))
+        {
+            var pageSlug = match.Groups["slugSquare"].Success ? match.Groups["slugSquare"].Value : match.Groups["slugBrace"].Value;
+            if (string.IsNullOrWhiteSpace(pageSlug))
+            {
+                continue;
+            }
+
+            var url = BuildPublicShowcaseUrl(publicSlug, pageSlug);
+            var label = $"Preview {ToTitleLabel(pageSlug)}";
+
+            if (actions.All(x => !string.Equals(x.NavigateUrl, url, StringComparison.OrdinalIgnoreCase)))
+            {
+                actions.Add(NavigateAction(url, label, "Open the customer-facing showcase preview.", "outline-primary", true));
             }
         }
 

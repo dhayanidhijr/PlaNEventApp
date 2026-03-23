@@ -18,6 +18,15 @@ public sealed class CalendarDashboardDto
     public IReadOnlyCollection<ShowcasePageSummaryDto> ShowcasePages { get; set; } = Array.Empty<ShowcasePageSummaryDto>();
 }
 
+public sealed class ShowcasePageUrlDto
+{
+    public int? PageId { get; set; }
+    public string PageName { get; set; } = string.Empty;
+    public string PageSlug { get; set; } = string.Empty;
+    public string OwnerSlug { get; set; } = string.Empty;
+    public string PublicUrl { get; set; } = string.Empty;
+}
+
 public sealed class CategoryDto
 {
     public int Id { get; set; }

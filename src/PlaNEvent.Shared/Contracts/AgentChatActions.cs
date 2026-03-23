@@ -21,6 +21,7 @@ public sealed class AgentChatActionDto
     public string Style { get; set; } = "secondary";
     public bool RequiresExecution { get; set; }
     public string NavigateUrl { get; set; } = string.Empty;
+    public bool OpenInNewTab { get; set; }
     public AgentChatVerificationDto? Verification { get; set; }
 }
 

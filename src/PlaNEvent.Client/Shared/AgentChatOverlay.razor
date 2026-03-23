@@ -277,6 +277,12 @@ Keep the inline styling lightweight and chat-friendly.
 
         if (!string.IsNullOrWhiteSpace(action.NavigateUrl))
         {
+            if (action.OpenInNewTab)
+            {
+                await Js.InvokeVoidAsync("open", action.NavigateUrl, "_blank", "noopener,noreferrer");
+                return;
+            }
+
             NavigationManager.NavigateTo(action.NavigateUrl, forceLoad: false);
         }
     }
