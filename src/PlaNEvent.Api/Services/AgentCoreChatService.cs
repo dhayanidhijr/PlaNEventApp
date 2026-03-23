@@ -735,7 +735,7 @@ public sealed class AgentCoreChatService(
         CancellationToken cancellationToken)
     {
         var enrichedHtml = await EnrichShowcaseResponseHtmlAsync(htmlReply, cancellationToken);
-        enrichedHtml = await ValidateShowcaseCreationClaimsAsync(enrichedHtml, cancellationToken);
+        enrichedHtml = await ValidateShowcaseClaimsAsync(enrichedHtml, cancellationToken);
         var actions = await BuildSuggestedActionsAsync(request.Message, cancellationToken);
         var showcaseActions = await BuildShowcasePreviewActionsAsync(enrichedHtml, cancellationToken);
         foreach (var showcaseAction in showcaseActions)
@@ -1944,7 +1944,7 @@ public sealed class AgentCoreChatService(
         return enriched;
     }
 
-    private async Task<string> ValidateShowcaseCreationClaimsAsync(string htmlReply, CancellationToken cancellationToken)
+    private async Task<string> ValidateShowcaseClaimsAsync(string htmlReply, CancellationToken cancellationToken)
     {
         var ownerId = CurrentUserId();
         if (string.IsNullOrWhiteSpace(ownerId) || string.IsNullOrWhiteSpace(htmlReply))
@@ -1953,34 +1953,63 @@ public sealed class AgentCoreChatService(
         }
 
         var claimedSlugs = ExtractShowcaseSlugs(htmlReply);
-        if (claimedSlugs.Count == 0 || !LooksLikeShowcaseCreationClaim(htmlReply))
+        if (claimedSlugs.Count > 0 && LooksLikeShowcaseCreationClaim(htmlReply))
         {
-            return htmlReply;
-        }
+            var persistedSlugs = await dbContext.ShowcasePages
+                .AsNoTracking()
+                .Where(x => x.OwnerId == ownerId && claimedSlugs.Contains(x.Slug))
+                .Select(x => x.Slug)
+                .ToListAsync(cancellationToken);
 
-        var persistedSlugs = await dbContext.ShowcasePages
-            .AsNoTracking()
-            .Where(x => x.OwnerId == ownerId && claimedSlugs.Contains(x.Slug))
-            .Select(x => x.Slug)
-            .ToListAsync(cancellationToken);
+            if (persistedSlugs.Count == 0)
+            {
+                var softenedHtml = htmlReply
+                    .Replace("Showcase Page Creation Complete", "Showcase Page Draft Prepared", StringComparison.OrdinalIgnoreCase)
+                    .Replace("Showcase Pages Created Successfully!", "Showcase Plan Prepared", StringComparison.OrdinalIgnoreCase)
+                    .Replace("Showcase page created.", "Showcase draft prepared.", StringComparison.OrdinalIgnoreCase)
+                    .Replace("has been created successfully", "has been drafted but not persisted", StringComparison.OrdinalIgnoreCase);
 
-        if (persistedSlugs.Count > 0)
-        {
-            return htmlReply;
-        }
-
-        var softenedHtml = htmlReply
-            .Replace("Showcase Page Creation Complete", "Showcase Page Draft Prepared", StringComparison.OrdinalIgnoreCase)
-            .Replace("Showcase Pages Created Successfully!", "Showcase Plan Prepared", StringComparison.OrdinalIgnoreCase)
-            .Replace("Showcase page created.", "Showcase draft prepared.", StringComparison.OrdinalIgnoreCase)
-            .Replace("has been created successfully", "has been drafted but not persisted", StringComparison.OrdinalIgnoreCase);
-
-        return
-            $"""
+                return
+                    $"""
 <div style="margin-bottom:0.85rem;padding:0.9rem 1rem;border:1px solid #d97706;border-radius:0.9rem;background:color-mix(in srgb,#d97706 12%,var(--sage-surface));color:var(--sage-text);">
   <strong>Persistence check:</strong> No showcase page record was actually saved for this response yet. Treat the content below as a draft recommendation, not a completed create.
 </div>
 {softenedHtml}
+""";
+            }
+        }
+
+        if (!LooksLikeShowcaseCleanupClaim(htmlReply))
+        {
+            return htmlReply;
+        }
+
+        var expectedRemainingCount = ExtractExpectedRemainingShowcaseCount(htmlReply);
+        if (!expectedRemainingCount.HasValue)
+        {
+            return htmlReply;
+        }
+
+        var actualRemainingCount = await dbContext.ShowcasePages
+            .AsNoTracking()
+            .CountAsync(x => x.OwnerId == ownerId && x.IsActive, cancellationToken);
+
+        if (actualRemainingCount == expectedRemainingCount.Value)
+        {
+            return htmlReply;
+        }
+
+        var softenedCleanupHtml = htmlReply
+            .Replace("Cleanup Status", "Cleanup Review", StringComparison.OrdinalIgnoreCase)
+            .Replace("Complete", "Needs verification", StringComparison.OrdinalIgnoreCase)
+            .Replace("Showcase page optimization is complete.", "Showcase cleanup plan was prepared, but the persisted page state does not match the claimed result yet.", StringComparison.OrdinalIgnoreCase);
+
+        return
+            $"""
+<div style="margin-bottom:0.85rem;padding:0.9rem 1rem;border:1px solid #dc2626;border-radius:0.9rem;background:color-mix(in srgb,#dc2626 12%,var(--sage-surface));color:var(--sage-text);">
+  <strong>Persistence check:</strong> Sage claimed {expectedRemainingCount.Value} remaining showcase pages, but the database currently has {actualRemainingCount} active pages. Treat the cleanup result below as unverified until the persisted page state matches.
+</div>
+{softenedCleanupHtml}
 """;
     }
 
@@ -2003,14 +2032,20 @@ public sealed class AgentCoreChatService(
         }
 
         var candidateSlugs = ExtractShowcaseSlugs(htmlReply);
-        if (candidateSlugs.Count == 0)
+        var pageQuery = dbContext.ShowcasePages
+            .AsNoTracking()
+            .Where(x => x.OwnerId == ownerId && x.IsActive);
+
+        if (candidateSlugs.Count > 0)
+        {
+            pageQuery = pageQuery.Where(x => candidateSlugs.Contains(x.Slug));
+        }
+        else if (!LooksLikeShowcaseStateChange(htmlReply))
         {
             return new List<AgentChatActionDto>();
         }
 
-        var persistedPages = await dbContext.ShowcasePages
-            .AsNoTracking()
-            .Where(x => x.OwnerId == ownerId && candidateSlugs.Contains(x.Slug) && x.IsActive)
+        var persistedPages = await pageQuery
             .OrderBy(x => x.IsHomePage ? 0 : 1)
             .ThenBy(x => x.Name)
             .Select(x => new { x.Name, x.Slug, x.IsHomePage })
@@ -2066,6 +2101,32 @@ public sealed class AgentCoreChatService(
             || htmlReply.Contains("showcase pages created successfully", StringComparison.OrdinalIgnoreCase)
             || htmlReply.Contains("showcase page created", StringComparison.OrdinalIgnoreCase)
             || htmlReply.Contains("public showcase url", StringComparison.OrdinalIgnoreCase);
+
+    private static bool LooksLikeShowcaseCleanupClaim(string htmlReply)
+        => htmlReply.Contains("showcase page cleanup", StringComparison.OrdinalIgnoreCase)
+            || htmlReply.Contains("removed pages", StringComparison.OrdinalIgnoreCase)
+            || htmlReply.Contains("retained strategic pages", StringComparison.OrdinalIgnoreCase)
+            || htmlReply.Contains("remaining pages", StringComparison.OrdinalIgnoreCase);
+
+    private static bool LooksLikeShowcaseStateChange(string htmlReply)
+        => LooksLikeShowcaseCreationClaim(htmlReply)
+            || LooksLikeShowcaseCleanupClaim(htmlReply)
+            || htmlReply.Contains("homepage updated", StringComparison.OrdinalIgnoreCase)
+            || htmlReply.Contains("showcase updated", StringComparison.OrdinalIgnoreCase)
+            || htmlReply.Contains("showcase strategy", StringComparison.OrdinalIgnoreCase);
+
+    private static int? ExtractExpectedRemainingShowcaseCount(string htmlReply)
+    {
+        var text = StripHtml(htmlReply);
+        var match = Regex.Match(text, @"Remaining\s+Pages\s*(?<count>\d+)", RegexOptions.IgnoreCase);
+        if (match.Success && int.TryParse(match.Groups["count"].Value, out var parsed))
+        {
+            return parsed;
+        }
+
+        match = Regex.Match(text, @"(?<count>\d+)\s+Strategic\s+Pages", RegexOptions.IgnoreCase);
+        return match.Success && int.TryParse(match.Groups["count"].Value, out parsed) ? parsed : null;
+    }
 
     private string BuildPublicShowcaseUrl(string publicSlug, string? pageSlug = null)
     {
