@@ -318,9 +318,13 @@ public sealed class AgentCoreChatService(
         var offeringContext = activeOfferings.Count == 0
             ? "No active offerings currently exist."
             : $"Active offerings currently available include: {string.Join(", ", activeOfferings)}.";
+        var businessTimeZone = ResolveTimeZone("America/New_York");
+        var nowLocal = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, businessTimeZone);
 
         return $"""
             <system>
+            Current facility-local timestamp: {nowLocal:yyyy-MM-dd HH:mm:ss zzz}
+            Facility time zone: {businessTimeZone.Id}
             {facilityContext}
             {showcaseContext}
             {offeringContext}
@@ -336,6 +340,9 @@ public sealed class AgentCoreChatService(
             Use this context when you recommend or create showcase events so the plan helps meet or exceed the saved targets.
             When discussing facility strategy, tie your recommendations back to these goals explicitly.
             Goal-setting features are planning signals only. They are not valid showcase API source types by themselves.
+            Before creating or updating offerings, rule groups, or timeslots that depend on relative dates like today, tomorrow, this week, next week, or this month, use the date/time tools first and anchor the schedule to the facility time zone.
+            Never choose a past year or a fully past date range for a new offering unless the user explicitly asked for historical data.
+            After creating or updating an offering, verify that upcoming occurrences exist before claiming success. If there are no upcoming occurrences, correct the schedule instead of presenting the action as complete.
             Before attempting to create or update a showcase page, resolve each feature to a real live offering or category record and use that record's numeric id.
             Showcase page items support SourceType values of "offering", "category", or "offeringCollection".
             Showcase page items only support CarouselType values of "carousel" or "rail".
@@ -1067,6 +1074,7 @@ public sealed class AgentCoreChatService(
             .OrderBy(x => x.Name)
             .Select(x => (int?)x.Id)
             .FirstOrDefaultAsync(cancellationToken);
+        var businessTodayUtc = BusinessLocalDateAsUtc("America/New_York");
 
         var offering = new Offering
         {
@@ -1083,7 +1091,7 @@ public sealed class AgentCoreChatService(
                 {
                     Name = template.RuleGroupName,
                     Color = template.Color,
-                    StartDateUtc = DateTime.UtcNow.Date,
+                    StartDateUtc = businessTodayUtc,
                     FrequencyType = "daysOfWeek",
                     WeekdaysCsv = string.Join(",", template.Weekdays),
                     Interval = 1,
@@ -1112,6 +1120,11 @@ public sealed class AgentCoreChatService(
             .Include(x => x.RuleGroups)
             .ThenInclude(x => x.Timeslots)
             .FirstAsync(x => x.Id == offering.Id, cancellationToken);
+        var upcomingOccurrenceCount = await dbContext.Occurrences
+            .AsNoTracking()
+            .Include(x => x.Slots)
+            .Where(x => x.OfferingId == refreshed.Id)
+            .CountAsync(x => x.Slots.Any(slot => slot.StartUtc >= DateTime.UtcNow.Date), cancellationToken);
 
         var firstRuleGroup = refreshed.RuleGroups.OrderBy(x => x.Id).First();
         var firstTimeslot = firstRuleGroup.Timeslots.OrderBy(x => x.Id).First();
@@ -1126,9 +1139,11 @@ public sealed class AgentCoreChatService(
                 new AgentChatDetailDto { Label = "Name", Value = refreshed.Name },
                 new AgentChatDetailDto { Label = "Category", Value = refreshed.Category?.Name ?? "Unassigned" },
                 new AgentChatDetailDto { Label = "Rule Group", Value = firstRuleGroup.Name },
+                new AgentChatDetailDto { Label = "Start Date", Value = firstRuleGroup.StartDateUtc.ToString("yyyy-MM-dd") },
                 new AgentChatDetailDto { Label = "Weekdays", Value = string.Join(", ", ParseWeekdayNames(firstRuleGroup.WeekdaysCsv)) },
                 new AgentChatDetailDto { Label = "Timeslot", Value = $"{firstTimeslot.StartTime:hh\\:mm} - {firstTimeslot.EndTime:hh\\:mm}" },
-                new AgentChatDetailDto { Label = "Published", Value = refreshed.IsPublished ? "Yes" : "No" }
+                new AgentChatDetailDto { Label = "Published", Value = refreshed.IsPublished ? "Yes" : "No" },
+                new AgentChatDetailDto { Label = "Upcoming Occurrences", Value = upcomingOccurrenceCount.ToString() }
             }
         };
 
@@ -1203,6 +1218,13 @@ public sealed class AgentCoreChatService(
         {
             return TimeZoneInfo.Utc;
         }
+    }
+
+    private static DateTime BusinessLocalDateAsUtc(string timeZoneId)
+    {
+        var zone = ResolveTimeZone(timeZoneId);
+        var localDate = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone).Date;
+        return DateTime.SpecifyKind(localDate, DateTimeKind.Utc);
     }
 
     private static ReportPeriod ResolveReportPeriod(string periodKey, DateTimeOffset nowLocal)

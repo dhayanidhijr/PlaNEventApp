@@ -10,6 +10,7 @@ from strands import tool
 def build_datetime_tools(default_timezone: str = "America/New_York") -> list[Any]:
     return [
         get_current_datetime_factory(default_timezone),
+        get_relative_date_context_factory(default_timezone),
         get_datetime_in_timezone,
         convert_datetime_between_timezones,
         add_days_to_datetime,
@@ -35,6 +36,48 @@ def get_current_datetime_factory(default_timezone: str):
         return build_datetime_payload(now_local, now_utc, local_zone.key)
 
     return get_current_datetime
+
+
+def get_relative_date_context_factory(default_timezone: str):
+    @tool(
+        name="get_relative_date_context",
+        description="Get business-relative date anchors like today, tomorrow, yesterday, this week, and this month in the default timezone.",
+        inputSchema={
+            "json": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            }
+        },
+    )
+    def get_relative_date_context() -> dict[str, Any]:
+        local_zone = safe_zoneinfo(default_timezone)
+        now_local = datetime.now(UTC).astimezone(local_zone)
+        today = now_local.date()
+        start_of_week = today - timedelta(days=today.weekday() + 1 if today.weekday() < 6 else 0)
+        if now_local.strftime("%A") != "Sunday":
+            start_of_week = today - timedelta(days=(today.weekday() + 1) % 7)
+        end_of_week = start_of_week + timedelta(days=6)
+        start_of_month = today.replace(day=1)
+        if today.month == 12:
+            next_month = today.replace(year=today.year + 1, month=1, day=1)
+        else:
+            next_month = today.replace(month=today.month + 1, day=1)
+        end_of_month = next_month - timedelta(days=1)
+        return {
+            "timezone": local_zone.key,
+            "now_local_iso": now_local.isoformat(),
+            "today": today.isoformat(),
+            "tomorrow": (today + timedelta(days=1)).isoformat(),
+            "yesterday": (today - timedelta(days=1)).isoformat(),
+            "start_of_week": start_of_week.isoformat(),
+            "end_of_week": end_of_week.isoformat(),
+            "start_of_month": start_of_month.isoformat(),
+            "end_of_month": end_of_month.isoformat(),
+            "current_year": today.year,
+        }
+
+    return get_relative_date_context
 
 
 @tool(
