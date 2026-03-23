@@ -48,7 +48,10 @@ public sealed class AgentCoreChatService(
 
         if (!string.IsNullOrWhiteSpace(ownerId))
         {
-            var directActionResponse = await TryHandleDirectRecommendationCommandAsync(sessionId, ownerId, request.Message, cancellationToken);
+            var directCommand = TryResolveDirectRecommendationCommand(ExtractUserMessage(request.Message));
+            var directActionResponse = directCommand is null
+                ? null
+                : await ExecuteDirectRecommendationCommandAsync(sessionId, ownerId, directCommand, cancellationToken);
             if (directActionResponse is not null)
             {
                 return directActionResponse;
@@ -101,10 +104,24 @@ public sealed class AgentCoreChatService(
 
         if (!string.IsNullOrWhiteSpace(ownerId))
         {
-            var directActionResponse = await TryHandleDirectRecommendationCommandAsync(sessionId, ownerId, request.Message, cancellationToken);
-            if (directActionResponse is not null)
+            var directCommand = TryResolveDirectRecommendationCommand(ExtractUserMessage(request.Message));
+            if (directCommand is not null)
             {
-                await WriteSseEventAsync(response, "session", new { sessionId = directActionResponse.SessionId }, cancellationToken);
+                await WriteSseEventAsync(response, "session", new { sessionId }, cancellationToken);
+                await WriteSseEventAsync(response, "delta", new
+                {
+                    sessionId,
+                    delta = directCommand.PreparationHtml,
+                    htmlReply = directCommand.PreparationHtml
+                }, cancellationToken);
+
+                var directActionResponse = await ExecuteDirectRecommendationCommandAsync(sessionId, ownerId, directCommand, cancellationToken);
+                await WriteSseEventAsync(response, "delta", new
+                {
+                    sessionId = directActionResponse.SessionId,
+                    delta = $"<p style=\"margin:0;color:var(--sage-muted);\">Action completed. Preparing preview and verification details...</p>",
+                    htmlReply = $"{directCommand.PreparationHtml}<p style=\"margin:0.6rem 0 0;color:var(--sage-muted);\">Action completed. Preparing preview and verification details...</p>"
+                }, cancellationToken);
                 await WriteSseEventAsync(response, "complete", directActionResponse, cancellationToken);
                 return;
             }
@@ -654,12 +671,23 @@ public sealed class AgentCoreChatService(
         string htmlReply,
         CancellationToken cancellationToken)
     {
+        var enrichedHtml = await EnrichShowcaseResponseHtmlAsync(htmlReply, cancellationToken);
+        var actions = await BuildSuggestedActionsAsync(request.Message, cancellationToken);
+        var showcaseActions = await BuildShowcasePreviewActionsAsync(enrichedHtml, cancellationToken);
+        foreach (var showcaseAction in showcaseActions)
+        {
+            if (actions.All(x => !string.Equals(x.NavigateUrl, showcaseAction.NavigateUrl, StringComparison.OrdinalIgnoreCase)))
+            {
+                actions.Add(showcaseAction);
+            }
+        }
+
         return new AgentChatResponse
         {
             SessionId = sessionId,
-            Reply = htmlReply,
-            HtmlReply = htmlReply,
-            Actions = await BuildSuggestedActionsAsync(request.Message, cancellationToken)
+            Reply = StripHtml(enrichedHtml),
+            HtmlReply = enrichedHtml,
+            Actions = actions
         };
     }
 
@@ -823,13 +851,9 @@ public sealed class AgentCoreChatService(
         };
     }
 
-    private async Task<AgentChatResponse?> TryHandleDirectRecommendationCommandAsync(
-        string sessionId,
-        string ownerId,
-        string message,
-        CancellationToken cancellationToken)
+    private DirectRecommendationCommand? TryResolveDirectRecommendationCommand(string message)
     {
-        var normalized = ExtractUserMessage(message).Trim().ToLowerInvariant();
+        var normalized = message.Trim().ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(normalized))
         {
             return null;
@@ -850,38 +874,73 @@ public sealed class AgentCoreChatService(
         if (normalized.Contains("showcase", StringComparison.Ordinal)
             && (normalized.Contains("today", StringComparison.Ordinal) || normalized.Contains("sales", StringComparison.Ordinal)))
         {
-            return await CreateShowcasePageFromTemplateAsync(sessionId, ownerId, "featured-programs", cancellationToken);
+            return new DirectRecommendationCommand(
+                "showcase_page",
+                "featured-programs",
+                "Create sales showcase for today",
+                "<div style=\"display:grid;gap:0.65rem;\"><p style=\"margin:0;color:var(--sage-text);font-weight:700;\">Approval confirmed.</p><p style=\"margin:0;color:var(--sage-muted);\">Sage is creating a showcase page to drive today's sales through the public booking experience.</p></div>");
         }
 
         if (normalized.Contains("offering for today", StringComparison.Ordinal)
             || normalized.Contains("create offering today", StringComparison.Ordinal)
             || normalized.Contains("create offering for today", StringComparison.Ordinal))
         {
-            return await CreateOfferingFromTemplateAsync(sessionId, ownerId, "private-session", cancellationToken);
+            return new DirectRecommendationCommand(
+                "offering",
+                "private-session",
+                "Create offering for today",
+                "<div style=\"display:grid;gap:0.65rem;\"><p style=\"margin:0;color:var(--sage-text);font-weight:700;\">Approval confirmed.</p><p style=\"margin:0;color:var(--sage-muted);\">Sage is creating today's offering template and schedule now.</p></div>");
         }
 
         if (normalized.Contains("weekly offering", StringComparison.Ordinal)
             || normalized.Contains("add weekly offering", StringComparison.Ordinal)
             || normalized.Contains("weekly plan", StringComparison.Ordinal))
         {
-            return await CreateOfferingFromTemplateAsync(sessionId, ownerId, "team-workshop", cancellationToken);
+            return new DirectRecommendationCommand(
+                "offering",
+                "team-workshop",
+                "Create weekly offering",
+                "<div style=\"display:grid;gap:0.65rem;\"><p style=\"margin:0;color:var(--sage-text);font-weight:700;\">Approval confirmed.</p><p style=\"margin:0;color:var(--sage-muted);\">Sage is creating the weekly offering and schedule details now.</p></div>");
         }
 
         if (normalized.Contains("monthly booster", StringComparison.Ordinal)
             || normalized.Contains("add monthly booster", StringComparison.Ordinal)
             || normalized.Contains("weekend booster", StringComparison.Ordinal))
         {
-            return await CreateOfferingFromTemplateAsync(sessionId, ownerId, "weekend-bootcamp", cancellationToken);
+            return new DirectRecommendationCommand(
+                "offering",
+                "weekend-bootcamp",
+                "Create monthly booster",
+                "<div style=\"display:grid;gap:0.65rem;\"><p style=\"margin:0;color:var(--sage-text);font-weight:700;\">Approval confirmed.</p><p style=\"margin:0;color:var(--sage-muted);\">Sage is creating the monthly booster offering for weekend demand.</p></div>");
         }
 
         if (normalized.Contains("booking showcase page", StringComparison.Ordinal)
             || normalized.Contains("create showcase page", StringComparison.Ordinal)
             || normalized.Contains("create booking page", StringComparison.Ordinal))
         {
-            return await CreateShowcasePageFromTemplateAsync(sessionId, ownerId, "home-booking-page", cancellationToken);
+            return new DirectRecommendationCommand(
+                "showcase_page",
+                "home-booking-page",
+                "Create booking showcase page",
+                "<div style=\"display:grid;gap:0.65rem;\"><p style=\"margin:0;color:var(--sage-text);font-weight:700;\">Approval confirmed.</p><p style=\"margin:0;color:var(--sage-muted);\">Sage is building the customer-facing booking showcase page now.</p></div>");
         }
 
         return null;
+    }
+
+    private async Task<AgentChatResponse> ExecuteDirectRecommendationCommandAsync(
+        string sessionId,
+        string ownerId,
+        DirectRecommendationCommand command,
+        CancellationToken cancellationToken)
+    {
+        return command.EntityType switch
+        {
+            "showcase_page" => await CreateShowcasePageFromTemplateAsync(sessionId, ownerId, command.TemplateKey, cancellationToken),
+            "offering" => await CreateOfferingFromTemplateAsync(sessionId, ownerId, command.TemplateKey, cancellationToken),
+            "category" => await CreateCategoryFromTemplateAsync(sessionId, ownerId, command.TemplateKey, cancellationToken),
+            _ => ErrorResponse(sessionId, $"Unsupported direct action '{command.EntityType}'.")
+        };
     }
 
     private async Task<AgentChatResponse> CreateOfferingFromTemplateAsync(
@@ -1600,7 +1659,7 @@ public sealed class AgentCoreChatService(
             .Select(x => x.PublicSlug)
             .FirstOrDefaultAsync(cancellationToken) ?? "admin";
 
-        var publicPreviewUrl = $"/showcase/{publicSlug}?pageSlug={Uri.EscapeDataString(page.Slug)}";
+        var publicPreviewUrl = BuildPublicShowcaseUrl(publicSlug, page.Slug);
         var verification = new AgentChatVerificationDto
         {
             Title = "Showcase Page Created",
@@ -1621,13 +1680,13 @@ public sealed class AgentCoreChatService(
         {
             SessionId = sessionId,
             Reply = $"Showcase page '{page.Name}' has been created successfully.",
-            HtmlReply = $"<div><p><strong>Showcase page created.</strong></p><p>{WebUtility.HtmlEncode(page.Name)} is ready. Use the verify button to inspect the saved details or open the public preview.</p></div>",
+            HtmlReply = $"<div style=\"display:grid;gap:0.75rem;\"><p style=\"margin:0;\"><strong>Showcase page created.</strong></p><p style=\"margin:0;\">{WebUtility.HtmlEncode(page.Name)} is ready.</p><div style=\"padding:0.85rem 1rem;border:1px solid var(--sage-border);border-radius:0.9rem;background:var(--sage-surface-muted);\"><div style=\"font-weight:700;color:var(--sage-text);margin-bottom:0.35rem;\">Preview URL</div><a href=\"{WebUtility.HtmlEncode(publicPreviewUrl)}\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--sage-accent);word-break:break-all;\">{WebUtility.HtmlEncode(publicPreviewUrl)}</a></div></div>",
             ActionCompleted = true,
             Verification = verification,
             Actions =
             {
                 VerifyAction("Verify Created Page", verification),
-                NavigateAction(publicPreviewUrl, "Preview Public Page", "Open the customer-facing version of the new showcase page.", "outline-primary"),
+                NavigateAction(publicPreviewUrl, "Preview Showcase", "Open the customer-facing version of the new showcase page.", "outline-primary"),
                 NavigateAction($"/showcase-pages?id={page.Id}", "Open Showcase Pages", "Jump into the showcase admin module for this page.")
             }
         };
@@ -1743,6 +1802,96 @@ public sealed class AgentCoreChatService(
             || normalized.Contains("public page", StringComparison.Ordinal)
             || normalized.Contains("page", StringComparison.Ordinal) && normalized.Contains("slug", StringComparison.Ordinal);
 
+    private async Task<string> EnrichShowcaseResponseHtmlAsync(string htmlReply, CancellationToken cancellationToken)
+    {
+        var ownerId = CurrentUserId();
+        if (string.IsNullOrWhiteSpace(ownerId) || string.IsNullOrWhiteSpace(htmlReply))
+        {
+            return htmlReply;
+        }
+
+        var publicSlug = await dbContext.Users
+            .Where(x => x.Id == ownerId)
+            .Select(x => x.PublicSlug)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(publicSlug))
+        {
+            return htmlReply;
+        }
+
+        var normalizedBase = optionsValue.ApiBaseUrl.TrimEnd('/');
+        var enriched = htmlReply
+            .Replace("/showcase/[your-slug]", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase)
+            .Replace("/showcase/{your-slug}", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase)
+            .Replace("/showcase/your-slug", $"{normalizedBase}/showcase/{publicSlug}", StringComparison.OrdinalIgnoreCase);
+
+        enriched = Regex.Replace(
+            enriched,
+            @"(?<!https?:)//?showcase/" + Regex.Escape(publicSlug) + @"(\?pageSlug=[^<\s""]+)?",
+            match => $"{normalizedBase}/showcase/{publicSlug}{match.Groups[1].Value}",
+            RegexOptions.IgnoreCase);
+
+        return enriched;
+    }
+
+    private async Task<List<AgentChatActionDto>> BuildShowcasePreviewActionsAsync(string htmlReply, CancellationToken cancellationToken)
+    {
+        var ownerId = CurrentUserId();
+        if (string.IsNullOrWhiteSpace(ownerId) || string.IsNullOrWhiteSpace(htmlReply))
+        {
+            return new List<AgentChatActionDto>();
+        }
+
+        var publicSlug = await dbContext.Users
+            .Where(x => x.Id == ownerId)
+            .Select(x => x.PublicSlug)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(publicSlug))
+        {
+            return new List<AgentChatActionDto>();
+        }
+
+        var matches = Regex.Matches(
+            htmlReply,
+            Regex.Escape(optionsValue.ApiBaseUrl.TrimEnd('/')) + @"/showcase/" + Regex.Escape(publicSlug) + @"(\?pageSlug=[^<\s""]+)?",
+            RegexOptions.IgnoreCase);
+
+        var actions = new List<AgentChatActionDto>();
+        foreach (Match match in matches.Cast<Match>().Take(3))
+        {
+            var url = match.Value;
+            var pageSlug = match.Groups[1].Success
+                ? Uri.UnescapeDataString(match.Groups[1].Value.Replace("?pageSlug=", string.Empty, StringComparison.OrdinalIgnoreCase))
+                : string.Empty;
+
+            var label = string.IsNullOrWhiteSpace(pageSlug)
+                ? "Preview Showcase"
+                : $"Preview {ToTitleLabel(pageSlug)}";
+
+            if (actions.All(x => !string.Equals(x.NavigateUrl, url, StringComparison.OrdinalIgnoreCase)))
+            {
+                actions.Add(NavigateAction(url, label, "Open the customer-facing showcase preview.", "outline-primary"));
+            }
+        }
+
+        return actions;
+    }
+
+    private string BuildPublicShowcaseUrl(string publicSlug, string? pageSlug = null)
+    {
+        var baseUrl = optionsValue.ApiBaseUrl.TrimEnd('/');
+        return string.IsNullOrWhiteSpace(pageSlug)
+            ? $"{baseUrl}/showcase/{publicSlug}"
+            : $"{baseUrl}/showcase/{publicSlug}?pageSlug={Uri.EscapeDataString(pageSlug)}";
+    }
+
+    private static string ToTitleLabel(string slug)
+        => string.Join(' ', slug
+            .Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(part => char.ToUpperInvariant(part[0]) + part[1..]));
+
     private string CurrentUserId()
         => httpContextAccessor.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? httpContextAccessor.HttpContext?.User.FindFirstValue("sub")
@@ -1797,4 +1946,10 @@ public sealed class AgentCoreChatService(
         int TargetBookingCount,
         decimal TargetSalesAmount,
         IReadOnlyCollection<FeaturePeriodMetrics> Features);
+
+    private sealed record DirectRecommendationCommand(
+        string EntityType,
+        string TemplateKey,
+        string UserLabel,
+        string PreparationHtml);
 }
