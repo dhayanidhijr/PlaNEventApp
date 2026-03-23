@@ -26,10 +26,12 @@
                         }
                     </select>
                     <select class="form-select form-select-sm app-theme-select" value="@DisplaySettings.Theme" @onchange="OnThemeChanged">
+                        <option value="default">Default</option>
                         <option value="light">Light</option>
                         <option value="dark">Dark</option>
-                        <option value="grayscale">Grayscale</option>
-                        <option value="color">Color</option>
+                        <option value="grayscale-light">Grayscale Light</option>
+                        <option value="grayscale-dark">Grayscale Dark</option>
+                        <option value="colour">Colour</option>
                     </select>
                     <select class="form-select form-select-sm app-scale-select" value="@DisplaySettings.ScalePercent" @onchange="OnScaleChanged">
                         @foreach (var scaleOption in ScaleOptions)
@@ -111,7 +113,7 @@
 
     private async Task OnThemeChanged(ChangeEventArgs args)
     {
-        await DisplaySettings.SetThemeAsync(args.Value?.ToString() ?? "color");
+        await DisplaySettings.SetThemeAsync(args.Value?.ToString() ?? "default");
     }
 
     private async Task OnScaleChanged(ChangeEventArgs args)

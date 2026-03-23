@@ -4,7 +4,7 @@ namespace PlaNEvent.Client.Services;
 
 public sealed class DisplaySettingsService
 {
-    private const string DefaultTheme = "color";
+    private const string DefaultTheme = "default";
     private const int DefaultScalePercent = 100;
 
     private readonly IJSRuntime jsRuntime;
@@ -79,10 +79,14 @@ public sealed class DisplaySettingsService
 
     private static string NormalizeTheme(string? theme) => theme?.Trim().ToLowerInvariant() switch
     {
+        "default" => "default",
         "light" => "light",
         "dark" => "dark",
-        "grayscale" => "grayscale",
-        "color" => "color",
+        "grayscale-light" => "grayscale-light",
+        "grayscale" => "grayscale-light",
+        "grayscale-dark" => "grayscale-dark",
+        "colour" => "colour",
+        "color" => "colour",
         _ => DefaultTheme
     };
 

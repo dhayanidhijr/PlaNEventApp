@@ -1,6 +1,6 @@
 window.planeventDisplay = {
     getSettings: function () {
-        const theme = localStorage.getItem("planevent.theme") || "color";
+        const theme = localStorage.getItem("planevent.theme") || "default";
         const scalePercentRaw = parseInt(localStorage.getItem("planevent.scalePercent") || "100", 10);
         const scalePercent = Number.isFinite(scalePercentRaw) ? Math.min(200, Math.max(75, scalePercentRaw)) : 100;
 
@@ -11,7 +11,7 @@ window.planeventDisplay = {
     },
 
     applySettings: function (theme, scalePercent) {
-        const safeTheme = (theme || "color").toLowerCase();
+        const safeTheme = (theme || "default").toLowerCase();
         const parsedScale = parseInt(scalePercent, 10);
         const safeScalePercent = Number.isFinite(parsedScale) ? Math.min(200, Math.max(75, parsedScale)) : 100;
         const zoomFactor = 100 / safeScalePercent;
