@@ -735,6 +735,7 @@ public sealed class AgentCoreChatService(
         CancellationToken cancellationToken)
     {
         var enrichedHtml = await EnrichShowcaseResponseHtmlAsync(htmlReply, cancellationToken);
+        enrichedHtml = NormalizePreApprovalExecutionLanguage(enrichedHtml);
         enrichedHtml = await ValidateShowcaseClaimsAsync(enrichedHtml, cancellationToken);
         var actions = await BuildSuggestedActionsAsync(request.Message, cancellationToken);
         var showcaseActions = await BuildShowcasePreviewActionsAsync(enrichedHtml, cancellationToken);
@@ -2101,6 +2102,25 @@ public sealed class AgentCoreChatService(
             || htmlReply.Contains("showcase pages created successfully", StringComparison.OrdinalIgnoreCase)
             || htmlReply.Contains("showcase page created", StringComparison.OrdinalIgnoreCase)
             || htmlReply.Contains("public showcase url", StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizePreApprovalExecutionLanguage(string htmlReply)
+    {
+        if (string.IsNullOrWhiteSpace(htmlReply)
+            || htmlReply.Contains("Approval confirmed", StringComparison.OrdinalIgnoreCase))
+        {
+            return htmlReply;
+        }
+
+        return Regex.Replace(
+            htmlReply,
+            @"Preparing to execute (?<task>[^<\r\n]+?)\.\.\.",
+            match =>
+            {
+                var task = match.Groups["task"].Value.Trim();
+                return $"If you approve, reply yes and Sage will execute {WebUtility.HtmlEncode(task)}.";
+            },
+            RegexOptions.IgnoreCase);
+    }
 
     private static bool LooksLikeShowcaseCleanupClaim(string htmlReply)
         => htmlReply.Contains("showcase page cleanup", StringComparison.OrdinalIgnoreCase)
