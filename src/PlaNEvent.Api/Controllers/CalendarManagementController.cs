@@ -579,7 +579,9 @@ public sealed class CalendarManagementController(
 
         foreach (var itemDto in items)
         {
-            var item = page.Items.FirstOrDefault(x => x.Id == itemDto.Id);
+            var item = itemDto.Id > 0
+                ? page.Items.FirstOrDefault(x => x.Id == itemDto.Id)
+                : null;
             if (item is null)
             {
                 item = new ShowcasePageItem();
