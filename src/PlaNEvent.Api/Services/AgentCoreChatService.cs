@@ -296,14 +296,43 @@ public sealed class AgentCoreChatService(
         }
 
         var facilityContext = string.Join("\n", summaryLines.Where(x => !string.IsNullOrWhiteSpace(x)));
+        var activeShowcasePages = await dbContext.ShowcasePages
+            .AsNoTracking()
+            .Where(x => x.OwnerId == ownerId && x.IsActive)
+            .OrderBy(x => x.IsHomePage ? 0 : 1)
+            .ThenBy(x => x.Name)
+            .Select(x => new { x.Name, x.Slug, x.IsHomePage, ItemCount = x.Items.Count(item => item.IsActive) })
+            .ToListAsync(cancellationToken);
+
+        var activeOfferings = await dbContext.Offerings
+            .AsNoTracking()
+            .Where(x => x.OwnerId == ownerId && x.IsActive)
+            .OrderBy(x => x.Name)
+            .Select(x => x.Name)
+            .Take(12)
+            .ToListAsync(cancellationToken);
+
+        var showcaseContext = activeShowcasePages.Count == 0
+            ? "No active showcase pages currently exist."
+            : $"Active showcase pages currently available: {string.Join("; ", activeShowcasePages.Select(x => $"{x.Name} (slug {x.Slug}, {(x.IsHomePage ? "home page" : "standard page")}, {x.ItemCount} active rows)"))}.";
+        var offeringContext = activeOfferings.Count == 0
+            ? "No active offerings currently exist."
+            : $"Active offerings currently available include: {string.Join(", ", activeOfferings)}.";
+
         return $"""
             <system>
             {facilityContext}
+            {showcaseContext}
+            {offeringContext}
             Sales only happen when offerings are surfaced through the public showcase experience.
             Do not treat offering creation alone as the sales strategy.
             Treat offerings as supply, and treat showcase pages plus public promotion as the primary sales lever.
             When recommending how to improve sales, prioritize the showcase strategy first: what should be published, featured, highlighted, grouped, or promoted through showcase pages.
+            Before recommending a brand-new showcase page, first check whether an existing active showcase page can be updated.
+            Before recommending a brand-new showcase row, first check whether an existing active row on an existing page can be reused or refreshed to feature the needed offering or category.
+            Only recommend creating a new showcase page when there is no suitable existing page or row structure to support the goal.
             Only recommend creating a new offering when the current supply is clearly insufficient for the target.
+            If suitable showcase pages already exist but the right offering is missing, recommend creating the offering and then publishing it into an existing page or carousel instead of creating a new page first.
             Use this context when you recommend or create showcase events so the plan helps meet or exceed the saved targets.
             When discussing facility strategy, tie your recommendations back to these goals explicitly.
             Goal-setting features are planning signals only. They are not valid showcase API source types by themselves.
@@ -1486,6 +1515,10 @@ public sealed class AgentCoreChatService(
         builder.AppendLine("List the showcase pages, featured rows, promoted offerings, schedule changes, or capacity changes that should be implemented now, in priority order.");
         builder.AppendLine("Name the recommended offerings clearly, for example private session, weekly workshop, weekend bootcamp, or other specific offering ideas based on the feature gaps.");
         builder.AppendLine("For sales improvement, recommendations must be showcase-led: explain which showcase experience should be created or updated so customers actually see and book the inventory.");
+        builder.AppendLine("Always evaluate the existing active showcase pages and rows first.");
+        builder.AppendLine("If an existing page or existing carousel row can be reused, say that explicitly and prefer updating it over creating a new page.");
+        builder.AppendLine("Only recommend creating a brand-new showcase page when no existing page or row can reasonably carry the needed promotion.");
+        builder.AppendLine("If supply is missing, say which offering should be created and then state which existing showcase page or row it should be published into.");
         builder.AppendLine("6. after the recommendations, include a plain-language approval ask such as 'If you approve, reply yes and I will create X now.'");
         builder.AppendLine("Do not tell the user to click buttons. Buttons are optional support only.");
         builder.AppendLine("Feature performance should always be called out explicitly for the selected period when feature goal settings exist.");
@@ -1528,20 +1561,20 @@ public sealed class AgentCoreChatService(
   <div style="padding:1rem;border:1px solid var(--sage-border);border-radius:1rem;background:var(--sage-surface);">
     <h4 style="margin:0 0 0.5rem;">What We Should Do Next</h4>
     <ul style="margin:0;padding-left:1.1rem;">
-      <li>Publish and feature the strongest offerings through showcase rows tied to the best-performing features and time slots.</li>
+      <li>Review existing active showcase pages first and use their current rows or carousels to feature the strongest offerings before creating any new page.</li>
       <li>Prioritize customer-facing showcase visibility for the current week and month where bookings are behind target.</li>
-      <li>Review whether current inventory is already sufficient before creating new offerings; if supply exists, the sales gap is likely a showcase and promotion problem first.</li>
+      <li>Review whether current inventory is already sufficient before creating new offerings; if supply exists, the sales gap is likely a showcase placement problem first.</li>
     </ul>
   </div>
   <div style="padding:1rem;border:1px solid var(--sage-border);border-radius:1rem;background:var(--sage-surface);">
     <h4 style="margin:0 0 0.5rem;">Recommendations</h4>
     <p style="margin:0 0 0.5rem;color:var(--sage-muted);">What is required right now to move toward the goal:</p>
     <ul style="margin:0;padding-left:1.1rem;">
-      <li>Create or refresh a Featured Programs showcase so customers see the best current inventory immediately.</li>
-      <li>Launch a Weekend Specials showcase to turn monthly inventory into visible bookable demand.</li>
-      <li>Create new offerings only where the report shows actual inventory gaps after showcase coverage is addressed.</li>
+      <li>Update an existing active showcase page or carousel row first so customers see the best current inventory immediately.</li>
+      <li>Reuse existing page structure wherever possible and create a new page only if there is no suitable current placement.</li>
+      <li>Create new offerings only where the report shows actual inventory gaps, then publish them into an existing showcase page before considering a new page.</li>
     </ul>
-    <p style="margin:0.75rem 0 0;color:var(--sage-text);font-weight:600;">If you approve, reply in text with the showcase you want me to create now, and I will perform it.</p>
+    <p style="margin:0.75rem 0 0;color:var(--sage-text);font-weight:600;">If you approve, reply in text with whether Sage should update an existing showcase, create a needed offering, or only create a new page if no existing placement works.</p>
   </div>
   <div style="padding:1rem;border:1px solid var(--sage-border);border-radius:1rem;background:var(--sage-surface);">
     <h4 style="margin:0 0 0.5rem;">What We Should Avoid</h4>
@@ -1572,48 +1605,62 @@ public sealed class AgentCoreChatService(
         var todayBehindRatio = currentDay.TargetBookingCount <= 0 ? 0 : todayGap / (decimal)currentDay.TargetBookingCount;
         var weekBehindRatio = currentWeek.TargetBookingCount <= 0 ? 0 : weekGap / (decimal)currentWeek.TargetBookingCount;
         var monthBehindRatio = currentMonth.TargetBookingCount <= 0 ? 0 : monthGap / (decimal)currentMonth.TargetBookingCount;
-
-        if (todayGap >= 1 && todayBehindRatio >= 0.5m)
-        {
-            actions.Add(CreateTemplateAction(
-                "showcase_page",
-                "featured-programs",
-                $"Yes, Create Sales Showcase For Today ({todayGap} short)",
-                $"Create a featured-programs showcase page now so the strongest available offerings are visible to customers and can start converting today's remaining booking gap of {todayGap}.",
-                "success"));
-        }
-
-        if (weekGap >= 3 && weekBehindRatio >= 0.35m)
-        {
-            actions.Add(CreateTemplateAction(
-                "showcase_page",
-                "featured-programs",
-                $"Yes, Publish Weekly Sales Showcase ({weekGap} short)",
-                $"Create or refresh a featured-programs showcase page to drive attention to the best weekly inventory and reduce the remaining weekly gap of {weekGap}.",
-                "success"));
-        }
-
-        if (monthGap >= 8 && monthBehindRatio >= 0.25m)
-        {
-            actions.Add(CreateTemplateAction(
-                "showcase_page",
-                "weekend-specials",
-                $"Yes, Launch Monthly Sales Showcase ({monthGap} short)",
-                $"Create a weekend-specials showcase page to promote high-conversion monthly inventory and reduce the remaining monthly gap of {monthGap}.",
-                "success"));
-        }
-
-        var hasActiveShowcasePages = await dbContext.ShowcasePages
+        var hasActiveOfferings = await dbContext.Offerings
             .AsNoTracking()
             .AnyAsync(x => x.OwnerId == ownerId && x.IsActive, cancellationToken);
+        var activeShowcasePages = await dbContext.ShowcasePages
+            .AsNoTracking()
+            .Where(x => x.OwnerId == ownerId && x.IsActive)
+            .OrderBy(x => x.IsHomePage ? 0 : 1)
+            .ThenBy(x => x.Name)
+            .Select(x => new { x.Name, x.Slug, x.IsHomePage })
+            .ToListAsync(cancellationToken);
+        var primaryPage = activeShowcasePages.FirstOrDefault();
 
-        if (!hasActiveShowcasePages && (todayBehindRatio >= 0.65m || weekBehindRatio >= 0.45m || monthBehindRatio >= 0.35m))
+        if (!hasActiveOfferings && (todayGap > 0 || weekGap > 0 || monthGap > 0))
+        {
+            actions.Add(CreateTemplateAction(
+                "offering",
+                "private-session",
+                "Yes, Create Offering Supply",
+                "Create a ready-to-book offering first because there is not enough active inventory to publish for sale.",
+                "success"));
+        }
+
+        if (primaryPage is not null && todayGap >= 1 && todayBehindRatio >= 0.5m)
+        {
+            actions.Add(NavigateAction(
+                $"/showcase-pages",
+                $"Yes, Update Existing Showcase For Today ({todayGap} short)",
+                $"Update the existing showcase page '{primaryPage.Name}' first and use its current rows or carousels to feature today's strongest offerings before creating any new page.",
+                "success"));
+        }
+
+        if (primaryPage is not null && weekGap >= 3 && weekBehindRatio >= 0.35m)
+        {
+            actions.Add(NavigateAction(
+                $"/showcase-pages",
+                $"Yes, Refresh Existing Weekly Showcase ({weekGap} short)",
+                $"Refresh the existing showcase page '{primaryPage.Name}' and reuse its rows to drive attention to the best weekly inventory before creating any new page.",
+                "success"));
+        }
+
+        if (primaryPage is not null && monthGap >= 8 && monthBehindRatio >= 0.25m)
+        {
+            actions.Add(NavigateAction(
+                $"/showcase-pages",
+                $"Yes, Reuse Existing Monthly Showcase ({monthGap} short)",
+                $"Reuse the existing showcase page '{primaryPage.Name}' and its current page structure first to promote monthly inventory before considering a new page.",
+                "success"));
+        }
+
+        if (activeShowcasePages.Count == 0 && (todayBehindRatio >= 0.65m || weekBehindRatio >= 0.45m || monthBehindRatio >= 0.35m))
         {
             actions.Add(CreateTemplateAction(
                 "showcase_page",
                 "home-booking-page",
                 "Yes, Create Booking Showcase Page",
-                "Create a customer-facing booking page now so existing and future offerings can actually be sold publicly.",
+                "Create a customer-facing booking page now because there is no existing active showcase page available to publish current or future offerings.",
                 "outline-primary"));
         }
 
